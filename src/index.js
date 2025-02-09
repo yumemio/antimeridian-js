@@ -228,27 +228,47 @@ export function spherical_degrees_to_cartesian(point) {
 }
 
 /**
- * Computes the crossing latitude for a great circle segment.
+ * Computes the crossing latitude using great circle (spherical) calculations.
  *
- * @param {Array} start - Starting point [longitude, latitude].
- * @param {Array} end - Ending point [longitude, latitude].
- * @returns {number} The crossing latitude.
+ * Given two points, it converts them to Cartesian coordinates, finds the plane
+ * defined by the two points (via a cross product), and then computes the intersection
+ * of that plane with the unit sphere (using another cross product).
+ *
+ * @param {[number, number]} start - Starting point [lon, lat] in degrees.
+ * @param {[number, number]} end - Ending point [lon, lat] in degrees.
+ * @returns {number} The crossing latitude in degrees, rounded to 7 decimals.
  */
 export function crossing_latitude_great_circle(start, end) {
-  // TODO: Implement great circle crossing latitude calculation
-  return 0;
+  const p1 = spherical_degrees_to_cartesian(start);
+  const p2 = spherical_degrees_to_cartesian(end);
+  const n1 = crossProduct(p1, p2);
+  const n2 = [0, -1, 0]; // The unit vector in the negative Y direction.
+  let intersection = crossProduct(n1, n2);
+  intersection = normalizeVector(intersection);
+  const latRad = Math.asin(intersection[2]);
+  const latDeg = latRad * (180 / Math.PI);
+  return roundTo7(latDeg);
 }
 
 /**
- * Computes the crossing latitude for a flat segment.
+ * Computes the crossing latitude using a flat (2D) approximation.
  *
- * @param {Array} start - Starting point [longitude, latitude].
- * @param {Array} end - Ending point [longitude, latitude].
- * @returns {number} The crossing latitude.
+ * This function computes the latitude at which a segment crosses the antimeridian
+ * using linear interpolation.
+ *
+ * @param {[number, number]} start - Starting point [lon, lat] in degrees.
+ * @param {[number, number]} end - Ending point [lon, lat] in degrees.
+ * @returns {number} The crossing latitude in degrees, rounded to 7 decimals.
  */
 export function crossing_latitude_flat(start, end) {
-  // TODO: Implement flat crossing latitude calculation
-  return 0;
+  const latDelta = end[1] - start[1];
+  let result;
+  if (end[0] > 0) {
+    result = start[1] + ((180 - start[0]) * latDelta) / (end[0] + 360 - start[0]);
+  } else {
+    result = start[1] + ((start[0] + 180) * latDelta) / (start[0] + 360 - end[0]);
+  }
+  return roundTo7(result);
 }
 
 /**
@@ -334,3 +354,29 @@ export function is_coincident_to_antimeridian(polygon) {
   // TODO: Implement check for antimeridian coincidence
   return false;
 }
+
+/* Internal helper: cross product of two 3D vectors */
+function crossProduct(a, b) {
+  return [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0]
+  ];
+}
+
+/* Internal helper: Euclidean norm of a 3D vector */
+function vectorNorm(v) {
+  return Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+}
+
+/* Internal helper: normalizes a 3D vector */
+function normalizeVector(v) {
+  const norm = vectorNorm(v);
+  return v.map(val => val / norm);
+}
+
+/* Internal helper: rounds a number to 7 decimal places */
+function roundTo7(num) {
+  return parseFloat(num.toFixed(7));
+}
+
