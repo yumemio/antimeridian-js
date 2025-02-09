@@ -99,41 +99,83 @@ export function segment_shape(shape, great_circle) {
 }
 
 /**
- * Fixes a MultiPolygon.
+ * Fixes a Turf.js MultiPolygon feature that may cross the antimeridian.
  *
- * @param {Object} multiPolygon - A GeoJSON MultiPolygon.
- * @param {Object} [options] - Options.
+ * Each constituent polygon is fixed individually (via fix_polygon_to_list),
+ * and then all results are combined into a single MultiPolygon feature.
+ *
+ * @param {Object} multiPolygon - A Turf.js MultiPolygon feature.
+ * @param {Object} [options] - Options object.
  * @param {boolean} [options.force_north_pole=false]
  * @param {boolean} [options.force_south_pole=false]
  * @param {boolean} [options.fix_winding=true]
  * @param {boolean} [options.great_circle=true]
- * @returns {Object} The fixed MultiPolygon.
+ * @returns {Object} A Turf.js MultiPolygon feature.
  */
-export function fix_multi_polygon(
+export function fix_multipolygon(
   multiPolygon,
   { force_north_pole = false, force_south_pole = false, fix_winding = true, great_circle = true } = {}
 ) {
-  // TODO: Implement using Turf.js
-  return null;
+  // Process each polygon in the MultiPolygon.
+  const allPolys = [];
+  for (const polyCoords of multiPolygon.geometry.coordinates) {
+    // Construct a Turf.js Polygon feature for each set of coordinates.
+    const polyFeature = turf.polygon(polyCoords, multiPolygon.properties);
+    const fixedParts = fix_polygon_to_list(polyFeature, { force_north_pole, force_south_pole, fix_winding, great_circle });
+    allPolys.push(...fixedParts);
+  }
+  // Combine all fixed polygons into a MultiPolygon.
+  const multiCoords = allPolys.map(p => p.geometry.coordinates);
+  return turf.multiPolygon(multiCoords, multiPolygon.properties);
 }
 
 /**
- * Fixes a Polygon.
+ * Fixes a Turf.js Polygon feature that may cross the antimeridian.
  *
- * @param {Object} polygon - A GeoJSON Polygon.
- * @param {Object} [options] - Options.
+ * If the fixed polygon (from fix_polygon_to_list) is single and its exterior ring
+ * is not oriented counterclockwise, then a new polygon is created whose exterior
+ * is a full-world ring and whose interior ring is the original polygon’s exterior.
+ *
+ * @param {Object} polygon - A Turf.js Polygon feature.
+ * @param {Object} [options] - Options object.
  * @param {boolean} [options.force_north_pole=false]
  * @param {boolean} [options.force_south_pole=false]
  * @param {boolean} [options.fix_winding=true]
  * @param {boolean} [options.great_circle=true]
- * @returns {Object} The fixed Polygon (or MultiPolygon if split).
+ * @returns {Object} Either a Turf.js Polygon feature or a Turf.js MultiPolygon feature.
  */
 export function fix_polygon(
   polygon,
   { force_north_pole = false, force_south_pole = false, fix_winding = true, great_circle = true } = {}
 ) {
-  // TODO: Implement using Turf.js
-  return null;
+  // When forcing a pole, we disable winding fixes.
+  if (force_north_pole || force_south_pole) {
+    fix_winding = false;
+  }
+  const fixedPolys = fix_polygon_to_list(polygon, { force_north_pole, force_south_pole, fix_winding, great_circle });
+  if (fixedPolys.length === 1) {
+    const poly = fixedPolys[0];
+    // If the exterior ring is oriented counterclockwise, all is well.
+    if (isCCW(poly.geometry.coordinates[0])) {
+      return poly;
+    } else {
+      // Otherwise, return a polygon whose exterior is the full world and whose hole is the original polygon.
+      const worldRing = [
+        [-180, 90],
+        [-180, -90],
+        [180, -90],
+        [180, 90],
+        [-180, 90]
+      ];
+      console.log("worldRing:", worldRing)
+      console.log("poly.geometry.coordinates[0]:", poly.geometry.coordinates[0])
+      return turf.polygon([worldRing, poly.geometry.coordinates[0]], polygon.properties);
+    }
+  } else {
+    // More than one fixed polygon: return a MultiPolygon feature.
+    const multipolyCoords = fixedPolys.map(p => p.geometry.coordinates);
+    return turf.multiPolygon(multipolyCoords, polygon.properties);
+  }
 }
 
 /**

@@ -12,6 +12,8 @@ import {
   build_polygons,
   extend_over_poles,
   fix_polygon_to_list,
+  fix_polygon,
+  fix_multipolygon,
   isCCW
 } from "../src/index.js";
 
@@ -383,6 +385,114 @@ describe('fix_polygon_to_list (Turf.js Polygon input)', () => {
     // Feature properties should be preserved.
     result.forEach(polygon => {
       expect(polygon.properties.name).toEqual('crossing');
+    });
+  });
+});
+
+describe('fix_polygon', () => {
+  test('returns the original polygon if orientation is correct', () => {
+    // A simple square with correctly oriented (counterclockwise) exterior.
+    const poly = turf.polygon([
+      [
+        [0, 0],
+        [0, 10],
+        [10, 10],
+        [10, 0],
+        [0, 0]
+      ]
+    ], { id: 'square' });
+    const result = fix_polygon(poly, { fix_winding: true, great_circle: true });
+    // Expect a single Polygon feature.
+    expect(result.geometry.type).toBe('Polygon');
+    // The exterior ring should be CCW.
+    expect(isCCW(result.geometry.coordinates[0])).toBe(true);
+    // Properties are preserved.
+    expect(result.properties.id).toBe('square');
+  });
+
+  test('returns a fixed polygon with full-world exterior if orientation is reversed', () => {
+    // A polygon with clockwise exterior ring.
+    // (For testing purposes, we simulate an input with wrong winding order.)
+    const clockwiseRing = [
+      [0, 0],
+      [10, 0],
+      [10, 10],
+      [0, 10],
+      [0, 0]
+    ].reverse(); // now clockwise
+    const poly = turf.polygon([clockwiseRing], { id: 'clockwise' });
+    const result = fix_polygon(poly, { fix_winding: false, great_circle: true });
+
+    // If fix_polygon_to_list returns a single polygon but with reversed (clockwise) ring,
+    // then our function returns a new polygon with a full-world exterior and the original ring as a hole.
+    expect(result.geometry.type).toBe('Polygon');
+    // The outer ring should be the full world.
+    const worldRing = [
+      [-180, 90],
+      [-180, -90],
+      [180, -90],
+      [180, 90],
+      [-180, 90]
+    ];
+    expect(result.geometry.coordinates[0]).toEqual(worldRing);
+    // The interior (hole) should equal the original (clockwise) ring.
+    expect(result.geometry.coordinates[1]).toEqual(clockwiseRing);
+    // Properties are preserved.
+    expect(result.properties.id).toBe('clockwise');
+  });
+
+  test('returns a MultiPolygon if fix_polygon_to_list yields multiple parts', () => {
+    // Simulate a polygon that splits into two parts.
+    // For testing, we can use fix_polygon_to_list to return an array with > 1 element.
+    // (Here we assume our segmentation logic will produce two parts.)
+    // We create an artificial scenario by directly calling fix_polygon with a Multi-part input.
+    const poly = turf.polygon([
+      [
+        [170, 10],
+        [180, 20],
+        [180, 40],
+        [-180, 40],
+        [-170, 30],
+        [-180, 20],
+        [170, 10]
+      ]
+    ], { id: 'split' });
+    const result = fix_polygon(poly, { fix_winding: true, great_circle: true });
+    // If multiple parts were produced, the result should be a MultiPolygon.
+    expect(result.geometry.type).toBe('MultiPolygon');
+    expect(result.properties.id).toBe('split');
+  });
+});
+
+describe('fix_multipolygon', () => {
+  test('fixes each constituent polygon and returns a MultiPolygon', () => {
+    // Create a MultiPolygon feature composed of two simple polygons.
+    const poly1 = [
+      [
+        [0, 0],
+        [0, 10],
+        [10, 10],
+        [10, 0],
+        [0, 0]
+      ]
+    ];
+    const poly2 = [
+      [
+        [20, 20],
+        [20, 30],
+        [30, 30],
+        [30, 20],
+        [20, 20]
+      ]
+    ];
+    const multi = turf.multiPolygon([poly1, poly2], { id: 'multipoly' });
+    const result = fix_multipolygon(multi, { fix_winding: true, great_circle: true });
+    expect(result.geometry.type).toBe('MultiPolygon');
+    expect(result.properties.id).toBe('multipoly');
+    // Check that each constituent polygon has a closed exterior ring.
+    result.geometry.coordinates.forEach(polygonCoords => {
+      const ring = polygonCoords[0];
+      expect(ring[0]).toEqual(ring[ring.length - 1]);
     });
   });
 });
