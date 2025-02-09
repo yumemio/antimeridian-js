@@ -375,16 +375,123 @@ export function crossing_latitude(start, end, great_circle) {
 /**
  * Extends segments over the poles if necessary.
  *
- * @param {Array} segments - List of segments.
- * @param {Object} options - Options including force_north_pole, force_south_pole, fix_winding.
- * @returns {Array} The updated segments.
+ * For segments whose endpoints lie on the antimeridian (longitude ±180),
+ * this function inspects the “start” and “end” of each segment. Depending on
+ * the provided flags (force_north_pole, force_south_pole) and the relative latitudes
+ * of segment endpoints, the function appends polar points to “extend” the segment.
+ *
+ * If both poles are extended and fix_winding is true, the function issues a warning
+ * and reverses the original segments.
+ *
+ * @param {Array.<Array.<[number, number]>>} segments - Array of segments (each segment is an array of coordinates).
+ * @param {Object} [options={}] - Options object.
+ * @param {boolean} [options.force_north_pole=false] - Force joining segments over the north pole.
+ * @param {boolean} [options.force_south_pole=false] - Force joining segments over the south pole.
+ * @param {boolean} [options.fix_winding=true] - If true and both poles are extended, reverse segment winding.
+ * @returns {Array.<Array.<[number, number]>>} The updated segments.
  */
 export function extend_over_poles(
   segments,
   { force_north_pole = false, force_south_pole = false, fix_winding = true } = {}
 ) {
-  // TODO: Implement logic to extend segments over poles
-  return segments;
+  // These variables will hold the index and latitude for the earliest/latest points.
+  let left_start = null;
+  let right_start = null;
+  let left_end = null;
+  let right_end = null;
+
+  // Inspect each segment's starting and ending coordinates.
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+    const start = seg[0];
+    const end = seg[seg.length - 1];
+
+    // Check starting coordinate.
+    if (start[0] === -180) {
+      if (!left_start || start[1] < left_start.latitude) {
+        left_start = { index: i, latitude: start[1] };
+      }
+    } else if (start[0] === 180) {
+      if (!right_start || start[1] > right_start.latitude) {
+        right_start = { index: i, latitude: start[1] };
+      }
+    }
+
+    // Check ending coordinate.
+    if (end[0] === -180) {
+      if (!left_end || end[1] < left_end.latitude) {
+        left_end = { index: i, latitude: end[1] };
+      }
+    } else if (end[0] === 180) {
+      if (!right_end || end[1] > right_end.latitude) {
+        right_end = { index: i, latitude: end[1] };
+      }
+    }
+  }
+
+  let is_over_north_pole = false;
+  let is_over_south_pole = false;
+  // Make a deep copy of the original segments.
+  const originalSegments = JSON.parse(JSON.stringify(segments));
+
+  // Process left-side (longitude -180) endpoints.
+  if (left_end) {
+    if (
+      force_north_pole &&
+      !force_south_pole &&
+      !right_end &&
+      (!left_start || left_end.latitude > left_start.latitude)
+    ) {
+      is_over_north_pole = true;
+      segments[left_end.index].push([-180, 90], [180, 90]);
+      segments[left_end.index].reverse();
+    } else if (
+      force_south_pole ||
+      !left_start ||
+      left_end.latitude < left_start.latitude
+    ) {
+      is_over_south_pole = true;
+      segments[left_end.index].push([-180, -90], [180, -90]);
+    }
+  }
+
+  // Process right-side (longitude 180) endpoints.
+  if (right_end) {
+    if (
+      force_south_pole &&
+      !force_north_pole &&
+      (!right_start || right_end.latitude < right_start.latitude)
+    ) {
+      is_over_south_pole = true;
+      segments[right_end.index].push([180, -90], [-180, -90]);
+      segments[right_end.index].reverse();
+    } else if (
+      force_north_pole ||
+      !right_start ||
+      right_end.latitude > right_start.latitude
+    ) {
+      is_over_north_pole = true;
+      segments[right_end.index].push([180, 90], [-180, 90]);
+    }
+  }
+
+  // If both poles were extended and fix_winding is true, reverse all original segments.
+  if (fix_winding && is_over_north_pole && is_over_south_pole) {
+    if (force_north_pole || force_south_pole) {
+      throw new Error(
+        'Invalid state: fix_winding cannot be true when force_north_pole or force_south_pole are set and both poles are extended.'
+      );
+    }
+    console.warn(
+      'FixWindingWarning: Reversing segments due to over both poles.'
+    );
+    for (let seg of originalSegments) {
+      seg.reverse();
+    }
+    return originalSegments;
+  } else {
+    return segments;
+  }
 }
 
 /**

@@ -9,7 +9,8 @@ import {
   normalize,
   segment,
   is_self_closing,
-  build_polygons
+  build_polygons,
+  extend_over_poles
 } from "../src/index.js";
 
 test("helloWorld function should return the expected greeting", () => {
@@ -245,6 +246,82 @@ describe('build_polygons', () => {
     ];
 
     expect(() => build_polygons(badSegments)).toThrow();
+  });
+});
+
+describe('extend_over_poles', () => {
+  test('extends a left-end segment over the north pole when force_north_pole is true', () => {
+    // This segment ends at -180.
+    const segments = [
+      [[-170, 10], [-180, 15]]
+    ];
+    // With force_north_pole true and no right endpoint, we expect the segment
+    // to be extended over the north pole. The extension appends [-180, 90] and [180, 90],
+    // then the segment is reversed.
+    const result = extend_over_poles(
+      JSON.parse(JSON.stringify(segments)),
+      { force_north_pole: true, force_south_pole: false, fix_winding: false }
+    );
+    // Expected process:
+    // Original: [[-170, 10], [-180, 15]]
+    // After extension: [[-170, 10], [-180, 15], [-180, 90], [180, 90]]
+    // Then reversed: [[180, 90], [-180, 90], [-180, 15], [-170, 10]]
+    expect(result[0][0]).toEqual([180, 90]);
+    expect(result[0][result[0].length - 1]).toEqual([-170, 10]);
+  });
+
+  test('extends a right-end segment over the south pole when force_south_pole is true', () => {
+    // This segment ends at 180.
+    const segments = [
+      [[170, 10], [180, 15]]
+    ];
+    // With force_south_pole true and no left endpoint for this segment,
+    // the segment should be extended over the south pole.
+    const result = extend_over_poles(
+      JSON.parse(JSON.stringify(segments)),
+      { force_south_pole: true, force_north_pole: false, fix_winding: false }
+    );
+    // Expected process:
+    // Original: [[170, 10], [180, 15]]
+    // After extension: [[170, 10], [180, 15], [180, -90], [-180, -90]]
+    // Then reversed: [[-180, -90], [180, -90], [180, 15], [170, 10]]
+    expect(result[0][0]).toEqual([-180, -90]);
+    expect(result[0][result[0].length - 1]).toEqual([170, 10]);
+  });
+
+  test('returns reversed original segments when both poles are extended and fix_winding is true', () => {
+    // Create two segments: one with a left-end and one with a right-end.
+    const segments = [
+      [[-170, 10], [-180, 5]],  // left-end segment
+      [[170, 20], [180, 25]]    // right-end segment
+    ];
+    // With no force flags and fix_winding true, both conditions will be met:
+    // left_end branch (due to !left_start) sets is_over_south_pole,
+    // right_end branch (due to !right_start) sets is_over_north_pole.
+    // Thus, the function should trigger fix_winding and return the original segments reversed.
+    const original = JSON.parse(JSON.stringify(segments));
+    const result = extend_over_poles(
+      JSON.parse(JSON.stringify(segments)),
+      { force_north_pole: false, force_south_pole: false, fix_winding: true }
+    );
+    // Each segment in result should equal the corresponding original segment reversed.
+    for (let i = 0; i < original.length; i++) {
+      const reversedOriginal = [...original[i]].reverse();
+      expect(result[i]).toEqual(reversedOriginal);
+    }
+  });
+
+  test('returns segments unchanged when no endpoint is at the pole', () => {
+    // Segments with endpoints not on ±180 should remain unchanged.
+    const segments = [
+      [[100, 10], [120, 20]],
+      [[-50, 30], [-40, 40]]
+    ];
+    const result = extend_over_poles(
+      JSON.parse(JSON.stringify(segments)),
+      { force_north_pole: false, force_south_pole: false, fix_winding: true }
+    );
+    expect(result).toEqual(segments);
   });
 });
 
