@@ -1,8 +1,11 @@
 import {
   helloWorld,
   spherical_degrees_to_cartesian,
+  crossing_latitude,
   crossing_latitude_great_circle,
-  crossing_latitude_flat
+  crossing_latitude_flat,
+  normalize,
+  segment
 } from "../src/index.js";
 
 test("helloWorld function should return the expected greeting", () => {
@@ -48,6 +51,121 @@ describe('crossing_latitude_flat', () => {
     //                                = 10 + 5 = 15.
     const result = crossing_latitude_flat([170, 10], [-170, 20]);
     expect(result).toBeCloseTo(15.0, 7);
+  });
+});
+
+describe('crossing_latitude (wrapper)', () => {
+  test('returns start latitude when start longitude is ±180', () => {
+    expect(crossing_latitude([180, 10], [0, 20], true)).toBe(10);
+    expect(crossing_latitude([-180, 15], [10, 25], true)).toBe(15);
+  });
+
+  test('returns end latitude when end longitude is ±180', () => {
+    expect(crossing_latitude([10, 20], [180, 30], true)).toBe(30);
+    expect(crossing_latitude([10, 20], [-180, 40], true)).toBe(40);
+  });
+
+  test('dispatches to great circle method when great_circle is true', () => {
+    // For a right-crossing scenario: [170, 10] to [-170, 20]
+    // Since neither endpoint is ±180, the wrapper calls crossing_latitude_great_circle.
+    const expected = crossing_latitude_great_circle([170, 10], [-170, 20]);
+    const result = crossing_latitude([170, 10], [-170, 20], true);
+    expect(result).toBeCloseTo(expected, 7);
+  });
+
+  test('dispatches to flat method when great_circle is false', () => {
+    const expected = crossing_latitude_flat([170, 10], [-170, 20]);
+    const result = crossing_latitude([170, 10], [-170, 20], false);
+    expect(result).toBeCloseTo(expected, 7);
+  });
+});
+
+describe('normalize', () => {
+  test('normalizes longitudes not equal to ±180', () => {
+    const input = [[181, 10], [0, 0]];
+    // 181 should normalize to -179
+    const expected = [[-179, 10], [0, 0]];
+    expect(normalize(input)).toEqual(expected);
+  });
+
+  test('handles points exactly at ±180 with adjacent points', () => {
+    // When points are exactly 180 or -180, behavior depends on the previous point.
+    const input = [[180, 10], [-180, 20]];
+    // For index 0, previous is last point ([-180,20]) so condition applies → set to [-180, 10].
+    // For index 1, previous is now [-180,10] (not 180) so remains as [-180,20].
+    const expected = [[180, 10], [-180, 20]];
+    // However, because all points are on the antimeridian, the original array is returned.
+    expect(normalize(input)).toEqual(input);
+  });
+
+  test('preserves extra dimensions', () => {
+    const input = [[181, 10, 5], [0, 0, 99]];
+    const expected = [[-179, 10, 5], [0, 0, 99]];
+    expect(normalize(input)).toEqual(expected);
+  });
+});
+
+describe('segment', () => {
+  test('returns empty array when no antimeridian crossing is detected', () => {
+    const coords = [[10, 0], [20, 0], [30, 0]];
+    expect(segment(coords, true)).toEqual([]);
+  });
+
+  test('handles a right crossing', () => {
+    // Right crossing: the jump is from a high positive longitude to a low (negative) one.
+    // Example: from [170, 10] to [-170, 20]
+    // Expected behavior:
+    //  - For the segment from [170,10] to [-170,20]:
+    //    * crossing_latitude is computed via crossing_latitude([-170,20],[170,10],true)
+    //      which (due to reversal in right crossing) should yield approximately 15.3398145.
+    //  - The first segment becomes: [[170,10], [180, ~15.3398145]]
+    //  - The second segment becomes: [[-180, ~15.3398145], [-170,20]]
+    const coords = [[170, 10], [-170, 20]];
+    const lat = crossing_latitude([-170, 20], [170, 10], true);
+    const expected = [
+      [
+        [170, 10],
+        [180, lat]
+      ],
+      [
+        [-180, lat],
+        [-170, 20]
+      ]
+    ];
+    const result = segment(coords, true);
+    expect(result.length).toBe(2);
+    expect(result[0][0]).toEqual([170, 10]);
+    expect(result[0][1][0]).toBeCloseTo(180, 7);
+    expect(result[1][0][0]).toBeCloseTo(-180, 7);
+    expect(result[1][1]).toEqual([-170, 20]);
+  });
+
+  test('handles a left crossing', () => {
+    // Left crossing: the jump is from a low negative longitude to a high positive one.
+    // Example: from [-170, 20] to [170, 10]
+    // Expected behavior:
+    //  - crossing_latitude is computed via crossing_latitude([-170,20],[170,10],true)
+    //    which should yield approximately 15.3398145.
+    //  - The first segment becomes: [[-170,20], [-180, ~15.3398145]]
+    //  - The second segment becomes: [[180, ~15.3398145], [170,10]]
+    const coords = [[-170, 20], [170, 10]];
+    const lat = crossing_latitude([-170, 20], [170, 10], true);
+    const expected = [
+      [
+        [-170, 20],
+        [-180, lat]
+      ],
+      [
+        [180, lat],
+        [170, 10]
+      ]
+    ];
+    const result = segment(coords, true);
+    expect(result.length).toBe(2);
+    expect(result[0][0]).toEqual([-170, 20]);
+    expect(result[0][1][0]).toBeCloseTo(-180, 7);
+    expect(result[1][0][0]).toBeCloseTo(180, 7);
+    expect(result[1][1]).toEqual([170, 10]);
   });
 });
 

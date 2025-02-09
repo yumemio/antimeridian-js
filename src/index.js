@@ -188,26 +188,105 @@ export function fix_polygon_to_list(
 }
 
 /**
- * Normalizes coordinates.
+ * Normalizes an array of coordinates.
  *
- * @param {Array} coords - Array of [longitude, latitude] pairs.
- * @returns {Array} Normalized coordinates.
+ * Ensures that all longitudes are within [-180, 180] (with special handling
+ * for values extremely close to ±180) and preserves extra dimensions.
+ *
+ * @param {Array.<[number, number, ...number]>} coords - Array of coordinates.
+ * @returns {Array.<[number, number, ...number]>} Normalized coordinates.
  */
 export function normalize(coords) {
-  // TODO: Implement coordinate normalization logic
-  return coords;
+  const original = coords.slice();
+  let allAreOnAntimeridian = true;
+  const normalized = [];
+
+  for (let i = 0; i < coords.length; i++) {
+    const point = coords[i];
+    let newPoint;
+
+    if (isClose(point[0], 180)) {
+      const prevIndex = (i - 1 + coords.length) % coords.length;
+
+      if (Math.abs(point[1]) !== 90 && isClose(coords[prevIndex][0], -180)) {
+        newPoint = [-180, point[1]];
+      } else {
+        newPoint = [180, point[1]];
+      }
+
+    } else if (isClose(point[0], -180)) {
+      const prevIndex = (i - 1 + coords.length) % coords.length;
+      if (Math.abs(point[1]) !== 90 && isClose(coords[prevIndex][0], 180)) {
+        newPoint = [180, point[1]];
+      } else {
+        newPoint = [-180, point[1]];
+      }
+
+    } else {
+      // Normalize longitude into [-180, 180]
+      const lon = point[0];
+      const normalizedLon = (((lon + 180) % 360) + 360) % 360 - 180;
+      newPoint = [normalizedLon, point[1]];
+      allAreOnAntimeridian = false;
+    }
+
+    if (point.length > 2) {
+      newPoint = newPoint.concat(point.slice(2));
+    }
+
+    normalized.push(newPoint);
+  }
+  return allAreOnAntimeridian ? original : normalized;
 }
 
 /**
- * Segments a list of coordinates into multiple segments.
+ * Segments a list of coordinates into multiple segments at antimeridian crossings.
  *
- * @param {Array} coords - Array of [longitude, latitude] pairs.
- * @param {boolean} great_circle - Use great circle calculations.
- * @returns {Array} List of segments.
+ * Iterates over consecutive coordinate pairs. When a crossing is detected (based on the
+ * difference in longitudes), the function calculates the crossing latitude and splits the
+ * segment accordingly.
+ *
+ * @param {Array.<[number, number]>} coords - Array of coordinates.
+ * @param {boolean} great_circle - Whether to use the great circle calculation.
+ * @returns {Array.<Array.<[number, number]>>} An array of segmented coordinate arrays.
  */
 export function segment(coords, great_circle) {
-  // TODO: Implement segmentation logic
-  return [];
+  let seg = [];
+  const segments = [];
+
+  for (let i = 0; i < coords.length - 1; i++) {
+    const start = coords[i];
+    const end = coords[i + 1];
+    seg.push(start);
+
+    if ((end[0] - start[0] > 180) && ((end[0] - start[0]) !== 360)) {
+      const lat = crossing_latitude(start, end, great_circle);
+      seg.push([-180, lat]);
+      segments.push(seg);
+      seg = [[180, lat]];
+
+    } else if ((start[0] - end[0] > 180) && ((start[0] - end[0]) !== 360)) {
+      const lat = crossing_latitude(end, start, great_circle);
+      seg.push([180, lat]);
+      segments.push(seg);
+      seg = [[-180, lat]];
+    }
+  }
+
+  // If no crossing was detected, return an empty array.
+  if (segments.length === 0) {
+    return [];
+
+  } else if (coordsEqual(coords[coords.length - 1], segments[0][0])) {
+    // For closed (polygon) rings, join segments.
+    segments[0] = seg.concat(segments[0]);
+
+  } else {
+    seg.push(coords[coords.length - 1]);
+    segments.push(seg);
+  }
+
+  return segments;
 }
 
 /**
@@ -272,17 +351,26 @@ export function crossing_latitude_flat(start, end) {
 }
 
 /**
- * Computes the crossing latitude based on the provided mode.
+ * Computes the crossing latitude given a segment defined by start and end.
+ * Acts as a wrapper choosing between great circle and flat calculations.
  *
- * @param {Array} start - Starting point [longitude, latitude].
- * @param {Array} end - Ending point [longitude, latitude].
- * @param {boolean} great_circle - Use great circle calculations.
- * @returns {number} The crossing latitude.
+ * @param {[number, number]} start - Starting point [lon, lat] in degrees.
+ * @param {[number, number]} end - Ending point [lon, lat] in degrees.
+ * @param {boolean} great_circle - If true, use the spherical method.
+ * @returns {number} The crossing latitude (in degrees), rounded to 7 decimals.
  */
 export function crossing_latitude(start, end, great_circle) {
-  // TODO: Implement crossing latitude logic
-  return 0;
+  if (Math.abs(start[0]) === 180) {
+    return start[1];
+  } else if (Math.abs(end[0]) === 180) {
+    return end[1];
+  }
+  if (great_circle) {
+    return crossing_latitude_great_circle(start, end);
+  }
+  return crossing_latitude_flat(start, end);
 }
+
 
 /**
  * Extends segments over the poles if necessary.
@@ -378,5 +466,31 @@ function normalizeVector(v) {
 /* Internal helper: rounds a number to 7 decimal places */
 function roundTo7(num) {
   return parseFloat(num.toFixed(7));
+}
+
+/**
+ * Determines if two numbers are close to each other within a tolerance.
+ * @param {number} a 
+ * @param {number} b 
+ * @param {number} [tol=1e-7]
+ * @returns {boolean}
+ */
+function isClose(a, b, tol = 1e-7) {
+  return Math.abs(a - b) < tol;
+}
+
+/**
+ * Compares two coordinate arrays for equality (with tolerance).
+ * @param {number[]} a 
+ * @param {number[]} b 
+ * @param {number} [tol=1e-7]
+ * @returns {boolean}
+ */
+function coordsEqual(a, b, tol = 1e-7) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (!isClose(a[i], b[i], tol)) return false;
+  }
+  return true;
 }
 
