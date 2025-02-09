@@ -41,5 +41,8 @@
     "presets": [
       "@babel/preset-env"
     ]
+  },
+  "dependencies": {
+    "@turf/turf": "^7.2.0"
   }
 }
