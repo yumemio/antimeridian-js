@@ -388,26 +388,100 @@ export function extend_over_poles(
 }
 
 /**
- * Builds polygons from segments.
+ * Builds polygons from an array of segments.
  *
- * @param {Array} segments - List of segments.
- * @returns {Array} List of polygons.
+ * This function attempts to join segments that share endpoints into closed polygon rings.
+ * It works recursively: it pops a segment, looks for a candidate segment whose starting coordinate
+ * has the same longitude as the current segment's ending coordinate (and meets additional latitude criteria),
+ * and if found, joins the segments and recurses. When no join candidate is found, the current segment is assumed
+ * to be self-contained (i.e. a complete polygon ring) and added to the result.
+ *
+ * @param {Array.<Array.<[number, number]>>} segments - Array of segments (each segment is an array of coordinates).
+ * @returns {Array} An array of Turf.js Polygon features.
  */
 export function build_polygons(segments) {
-  // TODO: Implement polygon building logic
-  return [];
+  if (segments.length === 0) return [];
+
+  // Remove one segment from the list.
+  let seg = segments.pop();
+  const isRight = seg[seg.length - 1][0] === 180;
+  const candidates = [];
+
+  // If the segment is self-closing, add a candidate with a null index.
+  if (is_self_closing(seg)) {
+    candidates.push([null, seg[0][1]]);
+  }
+
+  // Examine remaining segments for one that can join with the current segment.
+  for (let i = 0; i < segments.length; i++) {
+    const s = segments[i];
+    if (s[0][0] === seg[seg.length - 1][0]) {
+      if (isRight) {
+        if (
+          s[0][1] > seg[seg.length - 1][1] &&
+          (!is_self_closing(s) || s[s.length - 1][1] < seg[0][1])
+        ) {
+          candidates.push([i, s[0][1]]);
+        }
+      } else {
+        if (
+          s[0][1] < seg[seg.length - 1][1] &&
+          (!is_self_closing(s) || s[s.length - 1][1] > seg[0][1])
+        ) {
+          candidates.push([i, s[0][1]]);
+        }
+      }
+    }
+  }
+
+  // Sort candidates based on the candidate's starting latitude.
+  // (Sort ascending if isRight; descending otherwise.)
+  candidates.sort((a, b) => {
+    return isRight ? a[1] - b[1] : b[1] - a[1];
+  });
+
+  const index = candidates.length > 0 ? candidates[0][0] : null;
+
+  if (index !== null) {
+    // Join the candidate segment with the current segment.
+    const segToJoin = segments.splice(index, 1)[0];
+    seg = seg.concat(segToJoin);
+    segments.push(seg);
+    // Recurse with the updated segments.
+    return build_polygons(segments);
+  } else {
+    // No candidate found: assume this segment is a complete polygon.
+    const polygons = build_polygons(segments);
+    // Add the polygon only if it is not degenerate (i.e. not all points are the same).
+    const allSame = seg.every(pt => coordsEqual(pt, seg[0]));
+    if (!allSame) {
+      const closedRing = closeRing(seg);
+      const poly = turf.polygon([closedRing]);
+      polygons.push(poly);
+    }
+    return polygons;
+  }
 }
 
 /**
  * Checks if a segment is self-closing.
  *
- * @param {Array} segment - A segment (array of [longitude, latitude] pairs).
- * @returns {boolean} True if self-closing, false otherwise.
+ * A segment is considered self-closing if:
+ *   - The first and last coordinate have the same longitude, and
+ *   - For a "right" segment (i.e. ending with longitude 180) the first latitude is greater than the last latitude,
+ *     or for a "left" segment (ending with -180) the first latitude is less than the last latitude.
+ *
+ * @param {Array.<[number, number]>} segment - An array of coordinates.
+ * @returns {boolean} True if the segment is self-closing, false otherwise.
  */
 export function is_self_closing(segment) {
-  // TODO: Implement self-closing check
-  return false;
+  if (segment.length === 0) return false;
+  const first = segment[0];
+  const last = segment[segment.length - 1];
+  const isRight = last[0] === 180;
+  return (first[0] === last[0]) && (isRight ? (first[1] > last[1]) : (first[1] < last[1]));
 }
+
 
 /**
  * Calculates a GeoJSON-spec conforming bounding box for a shape.
@@ -492,5 +566,17 @@ function coordsEqual(a, b, tol = 1e-7) {
     if (!isClose(a[i], b[i], tol)) return false;
   }
   return true;
+}
+
+/**
+ * Helper: Ensures that a ring is closed by appending the first coordinate to the end if needed.
+ * @param {Array.<[number, number]>} ring
+ * @returns {Array.<[number, number]>}
+ */
+function closeRing(ring) {
+  if (!coordsEqual(ring[0], ring[ring.length - 1])) {
+    return ring.concat([ring[0]]);
+  }
+  return ring;
 }
 

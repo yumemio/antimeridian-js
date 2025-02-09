@@ -1,3 +1,5 @@
+import * as turf from '@turf/turf';
+
 import {
   helloWorld,
   spherical_degrees_to_cartesian,
@@ -5,7 +7,9 @@ import {
   crossing_latitude_great_circle,
   crossing_latitude_flat,
   normalize,
-  segment
+  segment,
+  is_self_closing,
+  build_polygons
 } from "../src/index.js";
 
 test("helloWorld function should return the expected greeting", () => {
@@ -166,6 +170,81 @@ describe('segment', () => {
     expect(result[0][1][0]).toBeCloseTo(-180, 7);
     expect(result[1][0][0]).toBeCloseTo(180, 7);
     expect(result[1][1]).toEqual([170, 10]);
+  });
+});
+
+describe('is_self_closing', () => {
+  test('returns true for a right segment with decreasing latitude', () => {
+    // Right segment: ends at 180 and first latitude > last latitude.
+    const segment = [[180, 20], [180, 10]];
+    expect(is_self_closing(segment)).toBe(true);
+  });
+
+  test('returns true for a left segment with increasing latitude', () => {
+    // Left segment: ends at -180 (not equal to 180) and first latitude < last latitude.
+    const segment = [[-180, 10], [-180, 20]];
+    expect(is_self_closing(segment)).toBe(true);
+  });
+
+  test('returns false when endpoints have different longitudes', () => {
+    const segment = [[170, 10], [180, 15]];
+    expect(is_self_closing(segment)).toBe(false);
+  });
+
+  test('returns false for degenerate segment (identical endpoints)', () => {
+    const segment = [[180, 15], [180, 15]];
+    expect(is_self_closing(segment)).toBe(false);
+  });
+});
+
+describe('build_polygons', () => {
+  test('builds a polygon from a single closed segment', () => {
+    // A simple closed ring (assumed to have been extended over the antimeridian).
+    const seg = [
+      [170, 10],
+      [180, 20],
+      [180, 40],
+      [-180, 40],
+      [-180, 20],
+      [170, 10]
+    ];
+    const result = build_polygons([seg]);
+    expect(result.length).toBe(1);
+    // Check that the outer ring of the returned Turf.js polygon matches the input segment.
+    expect(result[0].geometry.coordinates[0]).toEqual(seg);
+  });
+
+  test('returns three polygon rings for segments with at least three points each', () => {
+    // These segments mimic the ones in the original Python example.
+    const segments = [
+      [[130, 10], [170, 10], [180, 20]],
+      [[-180, 20], [-170, 20], [-180, 10]],
+      [[180, 10], [170, 10], [130, 10]]
+    ];
+
+    const result = build_polygons(segments);
+    expect(result.length).toBe(3);
+
+    // For each returned polygon, verify that the linear ring is closed.
+    result.forEach((polygon) => {
+      const ring = polygon.geometry.coordinates[0];
+      expect(ring[0]).toEqual(ring[ring.length - 1]);
+    });
+
+    // And verify that the individual rings are as expected.
+    expect(result[0].geometry.coordinates[0]).toEqual([[130, 10], [170, 10], [180, 20], [130, 10]]);
+    expect(result[1].geometry.coordinates[0]).toEqual([[-180, 20], [-170, 20], [-180, 10], [-180, 20]]);
+    expect(result[2].geometry.coordinates[0]).toEqual([[180, 10], [170, 10], [130, 10], [180, 10]]);
+  });
+
+  test('throws an error if any segment has fewer than three unique points', () => {
+    // For example, a segment with only two points cannot form a valid linear ring.
+    const badSegments = [
+      [[130, 10], [170, 10]],  // Only two points.
+      [[180, 10], [170, 10], [130, 10]]
+    ];
+
+    expect(() => build_polygons(badSegments)).toThrow();
   });
 });
 
