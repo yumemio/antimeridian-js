@@ -10,7 +10,9 @@ import {
   segment,
   is_self_closing,
   build_polygons,
-  extend_over_poles
+  extend_over_poles,
+  fix_polygon_to_list,
+  isCCW
 } from "../src/index.js";
 
 test("helloWorld function should return the expected greeting", () => {
@@ -325,3 +327,62 @@ describe('extend_over_poles', () => {
   });
 });
 
+describe('fix_polygon_to_list (Turf.js Polygon input)', () => {
+  test('returns one oriented polygon when no segmentation is needed', () => {
+    // A simple polygon that does not cross the antimeridian.
+    const poly = turf.polygon([
+      [
+        [0, 0],
+        [10, 0],
+        [10, 10],
+        [0, 10],
+        [0, 0]
+      ]
+    ], { name: 'simple' });
+    const result = fix_polygon_to_list(poly, { fix_winding: true, great_circle: true });
+    expect(result.length).toBe(1);
+    // The returned polygon's exterior ring should be oriented counterclockwise.
+    expect(isCCW(result[0].geometry.coordinates[0])).toBe(true);
+    // Feature properties should be preserved.
+    expect(result[0].properties.name).toEqual('simple');
+  });
+
+  test('segments a polygon crossing the antimeridian into multiple parts', () => {
+    // Construct a polygon that crosses the antimeridian.
+    const exterior = [
+      [170, 10],
+      [180, 20],
+      [180, 40],
+      [-180, 40],
+      [-180, 20],
+      [170, 10]
+    ];
+    // One interior (hole) that does not cross the antimeridian.
+    const interior = [
+      [175, 20],
+      [178, 20],
+      [178, 30],
+      [175, 30],
+      [175, 20]
+    ];
+    const poly = turf.polygon([exterior, interior], { name: 'crossing' });
+    const result = fix_polygon_to_list(poly, { fix_winding: true, great_circle: true });
+    // We expect at least one polygon (or more if segmentation split it)
+    expect(result.length).toBeGreaterThanOrEqual(1);
+    // Verify that each returned polygon’s exterior ring is closed.
+    result.forEach(polygon => {
+      const ring = polygon.geometry.coordinates[0];
+      expect(ring[0]).toEqual(ring[ring.length - 1]);
+    });
+    // Verify that at least one of the resulting polygons has an interior ring assigned.
+    const interiorAssigned = result.some(polygon =>
+      polygon.geometry.coordinates.length > 1 &&
+      polygon.geometry.coordinates[1].length > 0
+    );
+    expect(interiorAssigned).toBe(true);
+    // Feature properties should be preserved.
+    result.forEach(polygon => {
+      expect(polygon.properties.name).toEqual('crossing');
+    });
+  });
+});

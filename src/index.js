@@ -173,18 +173,98 @@ export function segment_polygon(polygon, great_circle) {
 }
 
 /**
- * Fixes a Polygon into a list of Polygons.
+ * (fix_polygon_to_list)
  *
- * @param {Object} polygon - A GeoJSON Polygon.
- * @param {Object} options - Options including force_north_pole, force_south_pole, fix_winding, and great_circle.
- * @returns {Array} List of fixed Polygons.
+ * Fixes a polygon that crosses the antimeridian by:
+ * 1. Normalizing the exterior ring (and interiors),
+ * 2. Segmenting the exterior (and interior rings) if necessary,
+ * 3. Extending segments over poles,
+ * 4. Rebuilding polygon rings from segments (via build_polygons), and
+ * 5. Assigning interior rings to the polygon that contains them.
+ *
+ * Returns an array of Turf.js Polygon features.
+ *
+ * @param {Object} polygon - A Turf.js Polygon feature.
+ * @param {Object} options - Options.
+ * @param {boolean} [options.force_north_pole=false]
+ * @param {boolean} [options.force_south_pole=false]
+ * @param {boolean} [options.fix_winding=true]
+ * @param {boolean} [options.great_circle=true]
+ * @returns {Array} Array of Turf.js Polygon features.
  */
 export function fix_polygon_to_list(
   polygon,
   { force_north_pole = false, force_south_pole = false, fix_winding = true, great_circle = true } = {}
 ) {
-  // TODO: Implement using Turf.js
-  return [];
+  // Process the exterior ring.
+  const exterior = normalize(polygon.geometry.coordinates[0]);
+  const segs = segment(exterior, great_circle);
+
+  if (segs.length === 0) {
+    // No segmentation needed; rebuild the polygon feature.
+    let poly = turf.polygon([exterior, ...polygon.geometry.coordinates.slice(1)], polygon.properties);
+    if (
+      fix_winding &&
+      (!isCCW(poly.geometry.coordinates[0]) ||
+       polygon.geometry.coordinates.slice(1).some(ring => isCCW(ring)))
+    ) {
+      console.warn("FixWindingWarning: Reorienting polygon exterior/interiors.");
+      poly = orientPolygon(poly);
+    }
+    return [poly];
+  } else {
+    // Process interior rings.
+    const interiors = [];
+    for (let i = 1; i < polygon.geometry.coordinates.length; i++) {
+      const interior = polygon.geometry.coordinates[i];
+      const interiorSegs = segment(interior, great_circle);
+      if (interiorSegs.length > 0) {
+        if (fix_winding) {
+          // Unwrap the ring by reducing longitudes modulo 360.
+          const unwrapped = interior.map(([x, y, ...rest]) => [(((x % 360) + 360) % 360), y, ...rest]);
+          if (isCCW(unwrapped)) {
+            console.warn("FixWindingWarning: Reversing interior ring due to winding.");
+            const reversed = interior.slice().reverse();
+            const newInteriorSegs = segment(reversed, great_circle);
+            segs.push(...newInteriorSegs);
+          } else {
+            segs.push(...interiorSegs);
+          }
+        } else {
+          segs.push(...interiorSegs);
+        }
+      } else {
+        interiors.push(interior);
+      }
+    }
+    // Extend segments over poles.
+    const extended = extend_over_poles(segs, { force_north_pole, force_south_pole, fix_winding });
+    // Rebuild polygon rings from extended segments.
+    const polys = build_polygons(extended);
+    if (polys.length === 0) {
+      throw new Error("No valid polygon could be constructed from segments.");
+    }
+    // Assign interior rings (holes) to the polygon that contains them.
+    for (let i = 0; i < polys.length; i++) {
+      let poly = polys[i];
+      const polyCoords = poly.geometry.coordinates[0];
+      for (let j = interiors.length - 1; j >= 0; j--) {
+        const interiorRing = interiors[j];
+        const interiorPoly = turf.polygon([interiorRing]);
+        if (turf.booleanContains(poly, interiorPoly)) {
+          const currentHoles = poly.geometry.coordinates.slice(1);
+          currentHoles.push(interiorRing);
+          poly = turf.polygon([polyCoords, ...currentHoles], polygon.properties);
+          polys[i] = poly;
+          interiors.splice(j, 1);
+        }
+      }
+    }
+    if (interiors.length > 0) {
+      throw new Error("Some interior rings could not be assigned to any polygon.");
+    }
+    return polys;
+  }
 }
 
 /**
@@ -685,5 +765,59 @@ function closeRing(ring) {
     return ring.concat([ring[0]]);
   }
   return ring;
+}
+
+/**
+ * Computes the signed area of a linear ring using the shoelace formula.
+ * Assumes the ring is closed.
+ * @param {Array.<[number, number]>} ring 
+ * @returns {number}
+ */
+function ringArea(ring) {
+  let area = 0;
+  for (let i = 0; i < ring.length - 1; i++) {
+    const [x1, y1] = ring[i];
+    const [x2, y2] = ring[i + 1];
+    area += x1 * y2 - x2 * y1;
+  }
+  return area / 2;
+}
+
+/**
+ * Returns true if the ring is oriented counterclockwise.
+ * (Positive area means counterclockwise.)
+ * @param {Array.<[number, number]>} ring 
+ * @returns {boolean}
+ */
+export function isCCW(ring) {
+  return ringArea(ring) > 0;
+}
+
+/**
+ * Orients a ring as desired.
+ * @param {Array.<[number, number]>} ring 
+ * @param {boolean} ccwDesired - True if the desired orientation is counterclockwise.
+ * @returns {Array.<[number, number]>}
+ */
+function orientRing(ring, ccwDesired) {
+  if (isCCW(ring) !== ccwDesired) {
+    return ring.slice().reverse();
+  }
+  return ring;
+}
+
+/**
+ * Returns a new Turf.js Polygon feature whose exterior ring is counterclockwise and interiors clockwise.
+ * Preserves the original properties.
+ * @param {Object} polygon - A Turf.js Polygon feature.
+ * @returns {Object} A reoriented Turf.js Polygon feature.
+ */
+function orientPolygon(polygon) {
+  const exterior = orientRing(polygon.geometry.coordinates[0], true);
+  const interiors = [];
+  for (let i = 1; i < polygon.geometry.coordinates.length; i++) {
+    interiors.push(orientRing(polygon.geometry.coordinates[i], false));
+  }
+  return turf.polygon([exterior, ...interiors], polygon.properties);
 }
 
