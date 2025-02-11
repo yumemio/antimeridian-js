@@ -14,7 +14,9 @@ import {
   fix_polygon_to_list,
   fix_polygon,
   fix_multipolygon,
-  isCCW
+  isCCW,
+  segment_polygon,
+  segment_shape,
 } from "../src/index.js";
 
 test("helloWorld function should return the expected greeting", () => {
@@ -496,3 +498,143 @@ describe('fix_multipolygon', () => {
     });
   });
 });
+
+describe('segment_polygon', () => {
+  test('returns the full exterior ring as a single segment when no crossing occurs', () => {
+    // A square that does not cross the antimeridian.
+    const poly = turf.polygon([
+      [
+        [0, 0],
+        [10, 0],
+        [10, 10],
+        [0, 10],
+        [0, 0]
+      ]
+    ]);
+    const segs = segment_polygon(poly, true);
+    // Expect one segment equal to the exterior ring.
+    expect(segs.length).toBe(1);
+    expect(arraysEqual(segs[0], poly.geometry.coordinates[0])).toBe(true);
+  });
+
+  test('processes an interior ring as well', () => {
+    // A polygon with an interior ring (hole) that does not cross the antimeridian.
+    const poly = turf.polygon([
+      [
+        [0, 0],
+        [20, 0],
+        [20, 20],
+        [0, 20],
+        [0, 0]
+      ],
+      [
+        [5, 5],
+        [15, 5],
+        [15, 15],
+        [5, 15],
+        [5, 5]
+      ]
+    ]);
+    const segs = segment_polygon(poly, true);
+    // Expect two sets of segments: one for the exterior and one for the interior.
+    expect(segs.length).toBe(2);
+    expect(arraysEqual(segs[0], poly.geometry.coordinates[0])).toBe(true);
+    expect(arraysEqual(segs[1], poly.geometry.coordinates[1])).toBe(true);
+  });
+
+  test('returns segmented parts when an antimeridian crossing is detected', () => {
+    // A polygon that crosses the antimeridian.
+    const exterior = [
+      [170, 10],
+      [-170, 10],
+      [-170, -10],
+      [165, -10],
+      [170, 10]
+    ];
+    const poly = turf.polygon([exterior]);
+    const segs = segment_polygon(poly, true);
+
+    // Expected value is calculated from the original implementation
+    // (gadomski/antimeridian)
+    const expected = [
+      [
+        [180, -10.2281808],
+        [165.0, -10.0],
+        [170.0, 10.0],
+        [180, 10.1510817]
+      ],
+      [
+        [-180, 10.1510817],
+        [-170.0, 10.0],
+        [-170.0, -10.0],
+        [-180, -10.2281808]
+      ]
+    ]
+    expect(arraysEqual(segs, expected))
+  });
+});
+
+describe('segment_shape', () => {
+  test('dispatches to segment_polygon for a Polygon', () => {
+    const poly = turf.polygon([
+      [
+        [0, 0],
+        [10, 0],
+        [10, 10],
+        [0, 10],
+        [0, 0]
+      ]
+    ]);
+    const segs = segment_shape(poly, true);
+    expect(segs.length).toBe(1);
+    expect(arraysEqual(segs[0], poly.geometry.coordinates[0])).toBe(true);
+  });
+
+  test('processes a MultiPolygon by concatenating segments from each polygon', () => {
+    // Create a MultiPolygon with two simple polygons.
+    const poly1 = [
+      [
+        [0, 0],
+        [10, 0],
+        [10, 10],
+        [0, 10],
+        [0, 0]
+      ]
+    ];
+    const poly2 = [
+      [
+        [20, 20],
+        [30, 20],
+        [30, 30],
+        [20, 30],
+        [20, 20]
+      ]
+    ];
+    const multi = turf.multiPolygon([poly1, poly2]);
+    const segs = segment_shape(multi, true);
+    // We expect two segments: one per constituent polygon.
+    expect(segs.length).toBe(2);
+    // The first segment should equal poly1's exterior ring.
+    expect(arraysEqual(segs[0], poly1[0])).toBe(true);
+    // The second segment should equal poly2's exterior ring.
+    expect(arraysEqual(segs[1], poly2[0])).toBe(true);
+  });
+
+  test('throws an error for unsupported geometry types', () => {
+    const point = turf.point([0, 0]);
+    expect(() => segment_shape(point, true)).toThrow();
+  });
+});
+
+// A simple helper to compare two arrays of coordinates.
+function arraysEqual(a, b, tol = 1e-7) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const ptA = a[i], ptB = b[i];
+    if (ptA.length !== ptB.length) return false;
+    for (let j = 0; j < ptA.length; j++) {
+      if (Math.abs(ptA[j] - ptB[j]) > tol) return false;
+    }
+  }
+  return true;
+}

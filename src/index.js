@@ -87,15 +87,35 @@ export function fix_shape(
 }
 
 /**
- * Segments a shape into a list of line segments.
+ * Segments a Turf.js shape (Polygon or MultiPolygon) into an array of segments.
  *
- * @param {Object} shape - A GeoJSON geometry or an object with a __geo_interface__.
- * @param {boolean} great_circle - Use great circle calculations.
- * @returns {Array} List of segments.
+ * If the input is a Polygon, segment_polygon() is called directly. For a MultiPolygon,
+ * each constituent polygon is processed, and all segments are returned in a single array.
+ *
+ * @param {Object} shape - A Turf.js Feature with geometry type "Polygon" or "MultiPolygon".
+ * @param {boolean} great_circle - If true, use great circle calculations for segmentation.
+ * @returns {Array.<Array.<[number, number]>>} Array of segments.
+ * @throws {Error} If the geometry type is unsupported.
  */
 export function segment_shape(shape, great_circle) {
-  // TODO: Implement using Turf.js
-  return [];
+  if (!shape || !shape.geometry || !shape.geometry.type) {
+    throw new Error("Invalid shape object: missing geometry type.");
+  }
+  if (shape.geometry.type === "Polygon") {
+    return segment_polygon(shape, great_circle);
+  } else if (shape.geometry.type === "MultiPolygon") {
+    const segments = [];
+    // Each polygon in a MultiPolygon is an array of rings.
+    for (const polyCoords of shape.geometry.coordinates) {
+      // Build a Turf.js Polygon feature from polyCoords.
+      const polyFeature = turf.polygon(polyCoords, shape.properties);
+      const segs = segment_polygon(polyFeature, great_circle);
+      segments.push(...segs);
+    }
+    return segments;
+  } else {
+    throw new Error(`Unsupported geometry type: ${shape.geometry.type}`);
+  }
 }
 
 /**
@@ -203,16 +223,38 @@ export function fix_multi_line_string(multiLineString, great_circle) {
 }
 
 /**
- * Segments a Polygon.
+ * Segments a Turf.js Polygon feature into an array of segments.
  *
- * @param {Object} polygon - A GeoJSON Polygon.
- * @param {boolean} great_circle - Use great circle calculations.
- * @returns {Array} List of segments.
+ * For the exterior ring, the function calls segment() on the coordinates. If no
+ * segmentation is needed (i.e. no antimeridian crossing detected), the entire ring is returned.
+ * Then, each interior ring is processed similarly.
+ *
+ * @param {Object} polygon - A Turf.js Polygon feature.
+ * @param {boolean} great_circle - If true, use great circle calculations for segmentation.
+ * @returns {Array.<Array.<[number, number]>>} Array of segments (each segment is an array of coordinates).
  */
 export function segment_polygon(polygon, great_circle) {
-  // TODO: Implement using Turf.js
-  return [];
+  const segments = [];
+  // Process exterior ring.
+  const exterior = polygon.geometry.coordinates[0];
+  let extSegments = segment(exterior, great_circle);
+  if (!extSegments || extSegments.length === 0) {
+    extSegments = [exterior];
+  }
+  segments.push(...extSegments);
+
+  // Process each interior ring.
+  const interiors = polygon.geometry.coordinates.slice(1);
+  for (const ring of interiors) {
+    let ringSegments = segment(ring, great_circle);
+    if (!ringSegments || ringSegments.length === 0) {
+      ringSegments = [ring];
+    }
+    segments.push(...ringSegments);
+  }
+  return segments;
 }
+
 
 /**
  * (fix_polygon_to_list)
