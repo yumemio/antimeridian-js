@@ -37,22 +37,48 @@ export class FixWindingWarning extends AntimeridianWarning {
 }
 
 /**
- * Fixes a GeoJSON object that crosses the antimeridian.
+ * Fixes a GeoJSON object that may cross the antimeridian.
+ *
+ * If the object is a Feature, its geometry is fixed (via fix_shape) and updated.
+ * If the object is a FeatureCollection, each feature is fixed recursively.
+ * Otherwise, it is assumed to be a raw geometry and is fixed accordingly.
  *
  * @param {Object} geojson - A GeoJSON object.
- * @param {Object} [options] - Options.
- * @param {boolean} [options.force_north_pole=false] - Force the joined segments to enclose the north pole.
- * @param {boolean} [options.force_south_pole=false] - Force the joined segments to enclose the south pole.
- * @param {boolean} [options.fix_winding=true] - Reverse the coordinates if wound clockwise.
- * @param {boolean} [options.great_circle=true] - Compute meridian crossings on the sphere.
- * @returns {Object} The fixed GeoJSON.
+ * @param {Object} options - Options.
+ * @param {boolean} [options.force_north_pole=false]
+ * @param {boolean} [options.force_south_pole=false]
+ * @param {boolean} [options.fix_winding=true]
+ * @param {boolean} [options.great_circle=true]
+ * @returns {Object} The fixed GeoJSON object.
  */
 export function fix_geojson(
   geojson,
   { force_north_pole = false, force_south_pole = false, fix_winding = true, great_circle = true } = {}
 ) {
-  // TODO: Implement using Turf.js
-  return geojson;
+  if (!geojson || !geojson.type) {
+    throw new Error("Invalid GeoJSON: missing type field.");
+  }
+  if (geojson.type === "Feature") {
+    if (!geojson.geometry) {
+      throw new Error("GeoJSON Feature missing geometry field.");
+    }
+    // Fix the feature (its geometry) and update it.
+    const fixedFeature = fix_shape(geojson, { force_north_pole, force_south_pole, fix_winding, great_circle });
+    geojson.geometry = fixedFeature.geometry;
+    return geojson;
+  } else if (geojson.type === "FeatureCollection") {
+    if (!geojson.features) {
+      throw new Error("GeoJSON FeatureCollection missing features field.");
+    }
+    geojson.features = geojson.features.map(feature =>
+      fix_geojson(feature, { force_north_pole, force_south_pole, fix_winding, great_circle })
+    );
+    return geojson;
+  } else {
+    // Assume it's a raw geometry.
+    const fixed = fix_shape({ geometry: geojson, properties: {} }, { force_north_pole, force_south_pole, fix_winding, great_circle });
+    return fixed.geometry;
+  }
 }
 
 /**
@@ -68,22 +94,38 @@ export function segment_geojson(geojson, great_circle) {
 }
 
 /**
- * Fixes a shape that crosses the antimeridian.
+ * Fixes a Turf.js shape (Feature) that may cross the antimeridian.
  *
- * @param {Object} shape - A GeoJSON geometry or an object with a __geo_interface__.
- * @param {Object} [options] - Options.
+ * Depending on the geometry type (Polygon, MultiPolygon, LineString, or MultiLineString),
+ * dispatches to the corresponding fix function.
+ *
+ * @param {Object} shape - A Turf.js Feature (with geometry).
+ * @param {Object} options - Options.
  * @param {boolean} [options.force_north_pole=false]
  * @param {boolean} [options.force_south_pole=false]
  * @param {boolean} [options.fix_winding=true]
  * @param {boolean} [options.great_circle=true]
- * @returns {Object} The fixed shape.
+ * @returns {Object} A fixed Turf.js Feature.
  */
 export function fix_shape(
   shape,
   { force_north_pole = false, force_south_pole = false, fix_winding = true, great_circle = true } = {}
 ) {
-  // TODO: Implement using Turf.js
-  return null;
+  if (!shape || !shape.geometry || !shape.geometry.type) {
+    throw new Error("Invalid shape: missing geometry type.");
+  }
+  const type = shape.geometry.type;
+  if (type === "Polygon") {
+    return fix_polygon(shape, { force_north_pole, force_south_pole, fix_winding, great_circle });
+  } else if (type === "MultiPolygon") {
+    return fix_multipolygon(shape, { force_north_pole, force_south_pole, fix_winding, great_circle });
+  } else if (type === "LineString") {
+    return fix_line_string(shape, great_circle);
+  } else if (type === "MultiLineString") {
+    return fix_multi_line_string(shape, great_circle);
+  } else {
+    throw new Error(`Unsupported geometry type: ${type}`);
+  }
 }
 
 /**

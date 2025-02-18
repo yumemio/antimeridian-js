@@ -18,7 +18,9 @@ import {
   segment_polygon,
   segment_shape,
   fix_line_string,
-  fix_multi_line_string
+  fix_multi_line_string,
+  fix_shape,
+  fix_geojson
 } from "../src/index.js";
 
 test("helloWorld function should return the expected greeting", () => {
@@ -696,6 +698,221 @@ describe('fix_multi_line_string', () => {
   });
 });
 
+describe('fix_shape', () => {
+  test('fixes a Polygon and returns a Polygon or MultiPolygon', () => {
+    // Create a polygon that crosses the antimeridian.
+    const poly = turf.polygon([
+      [
+        [170, 10],
+        [180, 20],
+        [180, 40],
+        [-170, 40],
+        [-170, 20],
+        [170, 10]
+      ]
+    ], { id: 'testPoly' });
+
+    const fixed = fix_shape(poly, { fix_winding: true, great_circle: true });
+
+    expect(fixed.geometry.type).toBe("MultiPolygon")
+    // The result should be the same as gadomski/antimeridian
+    expect(fixed.geometry.coordinates).toStrictEqual([
+      [
+        [
+          [180.0, 40.0],
+          [180.0, 40.0],
+          [180.0, 20.0],
+          [170.0, 10.0],
+          [180.0, 15.3398145],
+          [180.0, 40.0]
+        ],
+      ],
+      [
+        [
+          [-180.0, 15.3398145],
+          [-170.0, 20.0],
+          [-170.0, 40.0],
+          [-180.0, 40.0],
+          [-180.0, 15.3398145]
+        ],
+      ]
+    ])
+    expect(fixed.properties.id).toBe('testPoly');
+  });
+
+  test('fixes a LineString and returns a LineString or MultiLineString', () => {
+    // A line that crosses the antimeridian.
+    const line = turf.lineString([
+      [170, 10],
+      [-170, 20]
+    ], { id: 'testLine' });
+
+    const fixed = fix_shape(line, { great_circle: true });
+
+    expect(fixed.geometry.type).toBe("MultiLineString")
+    expect(fixed.geometry.coordinates).toStrictEqual([
+      [
+        [170.0, 10.0],
+        [180.0, 15.3398145]
+      ],
+      [
+        [-180.0, 15.3398145],
+        [-170.0, 20.0]
+      ]
+    ])
+    expect(fixed.properties.id).toBe('testLine');
+  });
+
+  test('throws an error for unsupported geometry types', () => {
+    const point = turf.point([0, 0], { id: 'testPoint' });
+    expect(() => fix_shape(point, {})).toThrow();
+  });
+});
+
+describe('fix_geojson', () => {
+  test('fixes a GeoJSON Feature', () => {
+    // Create a Feature with a polygon geometry.
+    const feature = turf.polygon([
+      [
+        [170, 10],
+        [180, 20],
+        [180, 40],
+        [-170, 40],
+        [-170, 20],
+        [170, 10]
+      ]
+    ], { name: 'feature1' });
+
+    const fixed = fix_geojson(feature, { fix_winding: true, great_circle: true });
+
+    expect(fixed.type).toBe("Feature");
+    expect(fixed.geometry.type).toBe("MultiPolygon")
+    expect(fixed.geometry.coordinates).toStrictEqual([
+      [
+        [
+          [180.0, 40.0],
+          [180.0, 40.0],
+          [180.0, 20.0],
+          [170.0, 10.0],
+          [180.0, 15.3398145],
+          [180.0, 40.0]
+        ],
+      ],
+      [
+        [
+          [-180.0, 15.3398145],
+          [-170.0, 20.0],
+          [-170.0, 40.0],
+          [-180.0, 40.0],
+          [-180.0, 15.3398145]
+        ],
+      ]
+    ])
+    // Properties should be preserved.
+    expect(fixed.properties.name).toBe('feature1');
+  });
+
+  test('fixes a GeoJSON FeatureCollection', () => {
+    const feature1 = turf.polygon([
+      [
+        [170, 10],
+        [180, 20],
+        [180, 40],
+        [-170, 40],
+        [-170, 20],
+        [170, 10]
+      ]
+    ], { id: 1 });
+    const feature2 = turf.lineString([
+      [170, 10],
+      [-170, 20]
+    ], { id: 2 });
+    const collection = turf.featureCollection([feature1, feature2]);
+
+    const fixedCollection = fix_geojson(collection, { fix_winding: true, great_circle: true });
+
+    expect(fixedCollection.type).toBe("FeatureCollection");
+    expect(fixedCollection.features.length).toBe(2);
+    // Check that each feature's geometry is fixed.
+    expect(fixedCollection.features[0].type).toBe("Feature") // WARN: not MultiPolygon
+    expect(fixedCollection.features[0].geometry.coordinates).toStrictEqual([
+      [
+        [
+          [180.0, 40.0],
+          [180.0, 40.0],
+          [180.0, 20.0],
+          [170.0, 10.0],
+          [180.0, 15.3398145],
+          [180.0, 40.0]
+        ],
+      ],
+      [
+        [
+          [-180.0, 15.3398145],
+          [-170.0, 20.0],
+          [-170.0, 40.0],
+          [-180.0, 40.0],
+          [-180.0, 15.3398145]
+        ],
+      ]
+    ])
+    expect(fixedCollection.features[1].geometry.type).toBe("MultiLineString")
+    expect(fixedCollection.features[1].geometry.coordinates).toStrictEqual([
+      [
+        [170.0, 10.0],
+        [180.0, 15.3398145]
+      ],
+      [
+        [-180.0, 15.3398145],
+        [-170.0, 20.0]
+      ]
+    ])
+  });
+
+  test('fixes a raw geometry object', () => {
+    // A raw geometry (Polygon).
+    const rawGeometry = {
+      type: "Polygon",
+      coordinates: [
+        [
+          [170, 10],
+          [180, 20],
+          [180, 40],
+          [-170, 40],
+          [-170, 20],
+          [170, 10]
+        ]
+      ]
+    };
+
+    const fixedGeom = fix_geojson(rawGeometry, { fix_winding: true, great_circle: true });
+
+    // Since the input was a raw geometry, we expect a fixed raw geometry.
+    expect(fixedGeom.type).toBe("MultiPolygon")
+    expect(fixedGeom.coordinates).toStrictEqual([
+      [
+        [
+          [180.0, 40.0],
+          [180.0, 40.0],
+          [180.0, 20.0],
+          [170.0, 10.0],
+          [180.0, 15.3398145],
+          [180.0, 40.0]
+        ],
+      ],
+      [
+        [
+          [-180.0, 15.3398145],
+          [-170.0, 20.0],
+          [-170.0, 40.0],
+          [-180.0, 40.0],
+          [-180.0, 15.3398145]
+        ],
+      ]
+    ])
+  });
+});
+
 // A simple helper to compare two arrays of coordinates.
 function arraysEqual(a, b, tol = 1e-7) {
   if (a.length !== b.length) return false;
@@ -707,4 +924,9 @@ function arraysEqual(a, b, tol = 1e-7) {
     }
   }
   return true;
+}
+
+// A simple helper to test geometry types.
+function expectGeometryType(feature, expectedType) {
+  expect(feature.geometry.type).toBe(expectedType);
 }
