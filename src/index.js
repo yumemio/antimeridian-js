@@ -199,27 +199,53 @@ export function fix_polygon(
 }
 
 /**
- * Fixes a LineString.
+ * Fixes a Turf.js LineString feature that may cross the antimeridian.
  *
- * @param {Object} lineString - A GeoJSON LineString.
- * @param {boolean} great_circle - Use great circle calculations.
- * @returns {Object} The fixed LineString (or MultiLineString if split).
+ * If the line does not cross the antimeridian, returns the original LineString.
+ * Otherwise, returns a Turf.js MultiLineString feature constructed from the segmented parts.
+ *
+ * @param {Object} lineString - A Turf.js LineString feature.
+ * @param {boolean} great_circle - Use great circle calculations if true.
+ * @returns {Object} A Turf.js LineString or MultiLineString feature.
  */
 export function fix_line_string(lineString, great_circle) {
-  // TODO: Implement using Turf.js
-  return null;
+  const coords = lineString.geometry.coordinates;
+  const segments = segment(coords, great_circle);
+
+  if (!segments || segments.length === 0) {
+    return lineString;
+  } else {
+    return turf.multiLineString(segments, lineString.properties);
+  }
 }
 
 /**
- * Fixes a MultiLineString.
+ * Fixes a Turf.js MultiLineString feature that may cross the antimeridian.
  *
- * @param {Object} multiLineString - A GeoJSON MultiLineString.
- * @param {boolean} great_circle - Use great circle calculations.
- * @returns {Object} The fixed MultiLineString.
+ * Each constituent LineString is processed via fix_line_string. If the fixed result is a LineString,
+ * its coordinates are added to the output array; if it is a MultiLineString, each of its line strings is added.
+ * Finally, returns a new Turf.js MultiLineString feature composed of all fixed line strings.
+ *
+ * @param {Object} multiLineString - A Turf.js MultiLineString feature.
+ * @param {boolean} great_circle - Use great circle calculations if true.
+ * @returns {Object} A Turf.js MultiLineString feature.
  */
 export function fix_multi_line_string(multiLineString, great_circle) {
-  // TODO: Implement using Turf.js
-  return null;
+  const fixedLineStrings = [];
+  // multiLineString.geometry.coordinates is an array of LineString coordinate arrays.
+  for (const lineCoords of multiLineString.geometry.coordinates) {
+    const lineFeature = turf.lineString(lineCoords, multiLineString.properties);
+    const fixed = fix_line_string(lineFeature, great_circle);
+
+    if (fixed.geometry.type === "LineString") {
+      fixedLineStrings.push(fixed.geometry.coordinates);
+    } else if (fixed.geometry.type === "MultiLineString") {
+      for (const subLine of fixed.geometry.coordinates) {
+        fixedLineStrings.push(subLine);
+      }
+    }
+  }
+  return turf.multiLineString(fixedLineStrings, multiLineString.properties);
 }
 
 /**

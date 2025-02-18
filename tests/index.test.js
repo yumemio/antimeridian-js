@@ -17,6 +17,8 @@ import {
   isCCW,
   segment_polygon,
   segment_shape,
+  fix_line_string,
+  fix_multi_line_string
 } from "../src/index.js";
 
 test("helloWorld function should return the expected greeting", () => {
@@ -623,6 +625,74 @@ describe('segment_shape', () => {
   test('throws an error for unsupported geometry types', () => {
     const point = turf.point([0, 0]);
     expect(() => segment_shape(point, true)).toThrow();
+  });
+});
+
+describe('fix_line_string', () => {
+  test('returns the original LineString when no antimeridian crossing is detected', () => {
+    // A line that does not cross the antimeridian.
+    const coords = [
+      [0, 0],
+      [10, 0],
+      [10, 10],
+      [0, 10]
+    ];
+    const line = turf.lineString(coords, { id: 'no-cross' });
+    const result = fix_line_string(line, true);
+    expect(result.geometry.type).toBe('LineString');
+    expect(result.properties.id).toBe('no-cross');
+    expect(result.geometry.coordinates).toEqual(coords);
+  });
+
+  test('returns a MultiLineString when an antimeridian crossing is detected', () => {
+    // A line that crosses the antimeridian.
+    // For example, from [170, 10] to [-170, 20] should trigger segmentation.
+    const coords = [
+      [170, 10],
+      [-170, 20]
+    ];
+    const line = turf.lineString(coords, { id: 'cross' });
+    const result = fix_line_string(line, true);
+    expect(result.geometry.type).toBe('MultiLineString');
+    expect(result.properties.id).toBe('cross');
+    // We expect two segments.
+    expect(result.geometry.coordinates.length).toBe(2);
+    // First segment should start at [170,10] and end at [180, some latitude].
+    expect(arraysEqual(result.geometry.coordinates[0][0], [170, 10])).toBe(true);
+    expect(result.geometry.coordinates[0][1][0]).toBeCloseTo(180, 7);
+    // Second segment should start at [-180, same latitude] and end at [-170,20].
+    expect(result.geometry.coordinates[1][0][0]).toBeCloseTo(-180, 7);
+    expect(result.geometry.coordinates[1][1]).toEqual([-170, 20]);
+  });
+});
+
+describe('fix_multi_line_string', () => {
+  test('fixes a MultiLineString by processing each constituent LineString', () => {
+    // Create a MultiLineString with two components:
+    // - One that does not cross the antimeridian.
+    // - One that crosses the antimeridian.
+    const coords1 = [
+      [10, 0],
+      [20, 0],
+      [30, 0]
+    ];
+    const coords2 = [
+      [170, 10],
+      [-170, 20]
+    ];
+    const multi = turf.multiLineString([coords1, coords2], { id: 'multi' });
+    const result = fix_multi_line_string(multi, true);
+    expect(result.geometry.type).toBe('MultiLineString');
+    expect(result.properties.id).toBe('multi');
+    // The non-crossing component should be present as is.
+    // The crossing component should be segmented (typically into 2 segments).
+    // So the total number of line strings in the fixed MultiLineString should be at least 3.
+    expect(result.geometry.coordinates.length).toBeGreaterThanOrEqual(3);
+    // Verify that all individual line strings are arrays of coordinates.
+    result.geometry.coordinates.forEach(lineCoords => {
+      expect(Array.isArray(lineCoords)).toBe(true);
+      expect(lineCoords.length).toBeGreaterThanOrEqual(2);
+    });
   });
 });
 
