@@ -20,7 +20,9 @@ import {
   fix_line_string,
   fix_multi_line_string,
   fix_shape,
-  fix_geojson
+  fix_geojson,
+  segment_geojson,
+  is_coincident_to_antimeridian
 } from "../src/index.js";
 
 test("helloWorld function should return the expected greeting", () => {
@@ -910,6 +912,69 @@ describe('fix_geojson', () => {
         ],
       ]
     ])
+  });
+});
+
+describe('segment_geojson', () => {
+  test('segments a Polygon Feature crossing the antimeridian', () => {
+    const poly = turf.polygon([
+      [
+        [170, 10],
+        [180, 20],
+        [180, 40],
+        [-170, 40],
+        [-170, 20],
+        [170, 10]
+      ]
+    ], { id: 'testPoly' });
+
+    const multiLine = segment_geojson(poly, true);
+
+    expect(multiLine.geometry.type).toBe("MultiLineString");
+    expect(multiLine.geometry.coordinates).toStrictEqual([
+      [
+        [180, 15.3398145],
+        [170, 10],
+        [180, 20],
+        [180, 40],
+        [180, 40],
+      ],
+      [
+        [-180, 40],
+        [-170, 40],
+        [-170, 20],
+        [-180, 15.3398145]
+      ]
+    ]);
+  });
+});
+
+describe('is_coincident_to_antimeridian', () => {
+  test('returns true for a polygon with a segment lying on the antimeridian', () => {
+    const poly = turf.polygon([
+      [
+        [170, 10],
+        [180, 20],
+        [180, 40],
+        [-170, 40],
+        [-170, 20],
+        [170, 10]
+      ]
+    ]);
+    expect(is_coincident_to_antimeridian(poly)).toBe(true);
+  });
+
+  test('returns false for a polygon with no segment fully on the antimeridian', () => {
+    const poly = turf.polygon([
+      [
+        [170, 10],
+        [175, 20],
+        [175, 40],
+        [170, 40],
+        [170, 10]
+      ]
+    ]);
+    expect(is_coincident_to_antimeridian(poly)).toBe(false);
   });
 });
 

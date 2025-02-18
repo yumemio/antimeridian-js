@@ -84,13 +84,41 @@ export function fix_geojson(
 /**
  * Segments a GeoJSON object into a MultiLineString.
  *
- * @param {Object} geojson - A GeoJSON object.
- * @param {boolean} great_circle - Use great circle calculations.
- * @returns {Object} A MultiLineString of segments.
+ * If the object does not cross the antimeridian, its exterior and interior
+ * line strings are returned unchanged.
+ *
+ * @param {Object} geojson - A GeoJSON object (Feature, FeatureCollection, or raw geometry).
+ * @param {boolean} great_circle - Use great circle calculations if true.
+ * @returns {Object} A Turf.js MultiLineString feature.
+ * @throws {Error} if the input GeoJSON is missing a "type" field or required subfields.
  */
 export function segment_geojson(geojson, great_circle) {
-  // TODO: Implement using Turf.js
-  return null;
+  if (!geojson || !geojson.type) {
+    throw new Error("no 'type' field found in GeoJSON");
+  } else if (geojson.type === "Feature") {
+    if (!geojson.geometry) {
+      throw new Error("no 'geometry' field found in GeoJSON Feature");
+    }
+    // Call segment_shape on the feature. It will return an array of segments.
+    const segments = segment_shape(geojson, great_circle);
+    return turf.multiLineString(segments, geojson.properties);
+  } else if (geojson.type === "FeatureCollection") {
+    if (!geojson.features) {
+      throw new Error("no 'features' field found in GeoJSON FeatureCollection");
+    }
+    let segments = [];
+    geojson.features.forEach(feature => {
+      // Recursively segment each feature.
+      const segsFeature = segment_geojson(feature, great_circle);
+      // segsFeature is a MultiLineString feature; extract its coordinates.
+      segments = segments.concat(segsFeature.geometry.coordinates);
+    });
+    return turf.multiLineString(segments);
+  } else {
+    // Assume it's a raw geometry.
+    const segments = segment_shape(geojson, great_circle);
+    return turf.multiLineString(segments);
+  }
 }
 
 /**
@@ -846,15 +874,31 @@ export function centroid(shape) {
 }
 
 /**
- * Checks if a polygon is coincident to the antimeridian.
+ * Checks if a Turf.js Polygon feature is coincident to the antimeridian.
  *
- * @param {Object} polygon - A GeoJSON Polygon.
- * @returns {boolean} True if coincident, false otherwise.
+ * Iterates over each consecutive pair of points in the exterior ring.
+ * If a pair is found where the absolute value of the longitude is 180
+ * (and both points share that same longitude), the function returns true.
+ *
+ * @param {Object} polygon - A Turf.js Polygon feature.
+ * @returns {boolean} True if the polygon is coincident to the antimeridian, false otherwise.
+ * @throws {Error} if the input is not a valid Turf.js Polygon.
  */
 export function is_coincident_to_antimeridian(polygon) {
-  // TODO: Implement check for antimeridian coincidence
+  if (!polygon || !polygon.geometry || polygon.geometry.type !== "Polygon") {
+    throw new Error("Input must be a Turf.js Polygon feature");
+  }
+  const coords = polygon.geometry.coordinates[0];
+  for (let i = 0; i < coords.length - 1; i++) {
+    const start = coords[i];
+    const end = coords[i + 1];
+    if (Math.abs(start[0]) === 180 && start[0] === end[0]) {
+      return true;
+    }
+  }
   return false;
 }
+
 
 /* Internal helper: cross product of two 3D vectors */
 function crossProduct(a, b) {
