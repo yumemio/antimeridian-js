@@ -852,25 +852,97 @@ export function is_self_closing(segment) {
 
 /**
  * Calculates a GeoJSON-spec conforming bounding box for a shape.
+ * If the shape is a MultiPolygon and it crosses the antimeridian (or if force_over_antimeridian is true),
+ * the bounding box is returned as [max(xmins), ymin, min(xmaxs), ymax]. Otherwise, [min(xmins), ymin, max(xmaxs), ymax].
  *
- * @param {Object} shape - A GeoJSON geometry or object with __geo_interface__.
- * @param {boolean} [force_over_antimeridian=false] - Force the bounding box over the antimeridian.
- * @returns {Array} The bounding box as [minX, minY, maxX, maxY].
+ * @param {Object} shape - A Turf.js Feature or raw geometry (Polygon or MultiPolygon).
+ * @param {boolean} [force_over_antimeridian=false] - If true, force the bounding box to be over the antimeridian.
+ * @returns {Array<number>} The bounding box as [minX, minY, maxX, maxY] (or the antimeridian version).
+ * @throws {Error} if the geometry type is not Polygon or MultiPolygon.
  */
 export function bbox(shape, force_over_antimeridian = false) {
-  // TODO: Implement bbox calculation using Turf.js
-  return [];
+  // If input is a Feature, use its geometry.
+  let geom = shape;
+  if (shape.type === "Feature") {
+    geom = shape.geometry;
+  }
+  if (geom.type === "Polygon") {
+    // Use Turf's bbox for a simple polygon.
+    return turf.bbox({ type: "Feature", geometry: geom });
+  } else if (geom.type === "MultiPolygon") {
+    let crossesAntimeridian = false;
+    const xmins = [];
+    const xmaxs = [];
+    let ymin = 90;
+    let ymax = -90;
+    // Iterate through each component polygon.
+    geom.coordinates.forEach(polygonCoords => {
+      const polyFeature = turf.polygon(polygonCoords);
+      const bounds = turf.bbox(polyFeature); // [minX, minY, maxX, maxY]
+      xmins.push(bounds[0]);
+      xmaxs.push(bounds[2]);
+      if (bounds[1] < ymin) ymin = bounds[1];
+      if (bounds[3] > ymax) ymax = bounds[3];
+      // If this polygon is coincident to the antimeridian (and not exactly spanning -180 to 180)
+      if (is_coincident_to_antimeridian(polyFeature) && !(bounds[0] === -180 && bounds[2] === 180)) {
+        crossesAntimeridian = true;
+      }
+    });
+    if (crossesAntimeridian || force_over_antimeridian) {
+      return [Math.max(...xmins), ymin, Math.min(...xmaxs), ymax];
+    } else {
+      return [Math.min(...xmins), ymin, Math.max(...xmaxs), ymax];
+    }
+  } else {
+    throw new Error("unsupported geom_type for bbox calculation: " + geom.type);
+  }
 }
 
 /**
- * Calculates the centroid for a polygon or multipolygon.
+ * Calculates the centroid for a Polygon or MultiPolygon.
+ * For a MultiPolygon, components with any negative longitudes are translated by +360,
+ * the centroid is computed from the resulting MultiPolygon, and then adjusted back if needed.
  *
- * @param {Object} shape - A GeoJSON Polygon or MultiPolygon.
- * @returns {Object} The centroid as a GeoJSON Point.
+ * @param {Object} shape - A Turf.js Feature or raw geometry (Polygon or MultiPolygon).
+ * @returns {Object} A Turf.js Point feature representing the centroid.
+ * @throws {Error} if the geometry type is not supported.
  */
 export function centroid(shape) {
-  // TODO: Implement centroid calculation using Turf.js
-  return null;
+  // If input is a Feature, use its geometry.
+  let geom = shape;
+  if (shape.type === "Feature") {
+    geom = shape.geometry;
+  }
+  if (geom.type === "Polygon") {
+    return turf.centroid({ type: "Feature", geometry: geom });
+  } else if (geom.type === "MultiPolygon") {
+    const newPolys = [];
+    geom.coordinates.forEach(polygonCoords => {
+      const exterior = polygonCoords[0];
+      // Check if any coordinate has a negative longitude.
+      const hasNegative = exterior.some(coord => coord[0] < 0);
+      let newCoords;
+      if (hasNegative) {
+        // Translate each coordinate in all rings by +360.
+        newCoords = polygonCoords.map(ring =>
+          ring.map(([lon, lat, ...rest]) => [lon + 360, lat, ...rest])
+        );
+      } else {
+        newCoords = polygonCoords;
+      }
+      newPolys.push(newCoords);
+    });
+    // Build a new MultiPolygon with the translated components.
+    const mp = turf.multiPolygon(newPolys);
+    let cent = turf.centroid(mp);
+    // If the computed centroid's longitude is greater than 180, adjust it.
+    if (cent.geometry.coordinates[0] > 180) {
+      cent.geometry.coordinates[0] -= 360;
+    }
+    return cent;
+  } else {
+    throw new Error("unsupported geom_type for centroid calculation: " + geom.type);
+  }
 }
 
 /**

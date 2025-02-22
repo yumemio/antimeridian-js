@@ -22,7 +22,9 @@ import {
   fix_shape,
   fix_geojson,
   segment_geojson,
-  is_coincident_to_antimeridian
+  is_coincident_to_antimeridian,
+  bbox,
+  centroid
 } from "../src/index.js";
 
 test("helloWorld function should return the expected greeting", () => {
@@ -975,6 +977,104 @@ describe('is_coincident_to_antimeridian', () => {
       ]
     ]);
     expect(is_coincident_to_antimeridian(poly)).toBe(false);
+  });
+});
+
+describe('bbox', () => {
+  test('returns correct bbox for a simple Polygon', () => {
+    const poly = turf.polygon([
+      [
+        [0, 0],
+        [10, 0],
+        [10, 10],
+        [0, 10],
+        [0, 0]
+      ]
+    ]);
+    const box = bbox(poly);
+    // Turf.bbox returns [minX, minY, maxX, maxY]
+    expect(box).toEqual([0, 0, 10, 10]);
+  });
+
+  test('returns antimeridian bbox for a MultiPolygon crossing the antimeridian', () => {
+    // Create a MultiPolygon with two components
+    const polygons = [
+      [
+        [
+          [10, 40],
+          [10, 50],
+          [-10, 50],
+          [-10, 40],
+          [10, 40]
+        ]
+      ],
+      [
+        [
+          [-170, 40],
+          [-170, 50],
+          [170, 50],
+          [170, 40],
+          [-170, 40]
+        ]
+      ]
+    ];
+    const multi = turf.multiPolygon(polygons);
+    // Calculate without forcing antimeridian bbox:
+    const box1 = bbox(multi, false);
+    expect(box1).toEqual([-170, 40, 170, 50]);
+
+    // Calculate forcing antimeridian bbox
+    const box2 = bbox(multi, true);
+    expect(box2).toEqual([-10, 40, 10, 50]);
+  });
+});
+
+describe('centroid', () => {
+  test('returns the centroid for a simple Polygon', () => {
+    const poly = turf.polygon([
+      [
+        [0, 0],
+        [10, 0],
+        [10, 10],
+        [0, 10],
+        [0, 0]
+      ]
+    ]);
+    const cent = centroid(poly);
+    // For a square from [0,0] to [10,10], the centroid should be approximately [5, 5]
+    expect(cent.geometry.coordinates[0]).toBeCloseTo(5, 7);
+    expect(cent.geometry.coordinates[1]).toBeCloseTo(5, 7);
+  });
+
+  test('returns adjusted centroid for a MultiPolygon crossing the antimeridian', () => {
+    // Create a MultiPolygon with two components:
+    // Component 1: with negative longitudes
+    const poly1 = [
+      [
+        [-170, 10],
+        [-160, 10],
+        [-160, 20],
+        [-170, 20],
+        [-170, 10]
+      ]
+    ];
+    // Component 2: with positive longitudes
+    const poly2 = [
+      [
+        [170, 10],
+        [180, 10],
+        [180, 20],
+        [170, 20],
+        [170, 10]
+      ]
+    ];
+    const multi = turf.multiPolygon([poly1, poly2]);
+    const cent = centroid(multi);
+    // The resulting centroid's longitude should be between -180 and 180.
+    expect(cent.geometry.coordinates[0]).toBeGreaterThanOrEqual(-180);
+    expect(cent.geometry.coordinates[0]).toBeLessThanOrEqual(180);
+    // And the latitude should be a finite number.
+    expect(typeof cent.geometry.coordinates[1]).toBe("number");
   });
 });
 
