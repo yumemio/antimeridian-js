@@ -257,8 +257,6 @@ export function fix_polygon(
         [180, 90],
         [-180, 90]
       ];
-      console.log("worldRing:", worldRing)
-      console.log("poly.geometry.coordinates[0]:", poly.geometry.coordinates[0])
       return turf.polygon([worldRing, poly.geometry.coordinates[0]], polygon.properties);
     }
   } else {
@@ -381,29 +379,25 @@ export function fix_polygon_to_list(
   const segs = segment(exterior, great_circle);
 
   if (segs.length === 0) {
-    // No segmentation needed; rebuild the polygon feature.
     let poly = turf.polygon([exterior, ...polygon.geometry.coordinates.slice(1)], polygon.properties);
     if (
       fix_winding &&
       (!isCCW(poly.geometry.coordinates[0]) ||
        polygon.geometry.coordinates.slice(1).some(ring => isCCW(ring)))
     ) {
-      console.warn("FixWindingWarning: Reorienting polygon exterior/interiors.");
       poly = orientPolygon(poly);
+    } else {
     }
     return [poly];
   } else {
-    // Process interior rings.
     const interiors = [];
     for (let i = 1; i < polygon.geometry.coordinates.length; i++) {
       const interior = polygon.geometry.coordinates[i];
       const interiorSegs = segment(interior, great_circle);
       if (interiorSegs.length > 0) {
         if (fix_winding) {
-          // Unwrap the ring by reducing longitudes modulo 360.
           const unwrapped = interior.map(([x, y, ...rest]) => [(((x % 360) + 360) % 360), y, ...rest]);
           if (isCCW(unwrapped)) {
-            console.warn("FixWindingWarning: Reversing interior ring due to winding.");
             const reversed = interior.slice().reverse();
             const newInteriorSegs = segment(reversed, great_circle);
             segs.push(...newInteriorSegs);
@@ -417,14 +411,11 @@ export function fix_polygon_to_list(
         interiors.push(interior);
       }
     }
-    // Extend segments over poles.
     const extended = extend_over_poles(segs, { force_north_pole, force_south_pole, fix_winding });
-    // Rebuild polygon rings from extended segments.
     const polys = build_polygons(extended);
     if (polys.length === 0) {
       throw new Error("No valid polygon could be constructed from segments.");
     }
-    // Assign interior rings (holes) to the polygon that contains them.
     for (let i = 0; i < polys.length; i++) {
       let poly = polys[i];
       const polyCoords = poly.geometry.coordinates[0];

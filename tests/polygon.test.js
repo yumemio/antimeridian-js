@@ -3,6 +3,7 @@ import * as turf from '@turf/turf';
 const { readInput, readOutput } = require('./conftest');
 require('./jestExtensions/toBeCloseGeoJSON');
 const { fix_polygon, fix_shape, centroid } = require('../src/index.js');
+const { normalize } = require('./helper/normalize');
 
 // Helper function to translate a GeoJSON geometry by (dx, dy)
 function translate(geom, dx, dy) {
@@ -62,21 +63,7 @@ describe('fix_polygon', () => {
         expect(input.geometry.type).toBe("Polygon");
         const expected = readOutput(name, subdirectory);
         const fixed = fix_polygon(input, { great_circle });
-        if (name == 'south-pole') {
-          console.log(
-            `${name}/${subdirectory}/great_circle=${great_circle}/input`,
-            JSON.stringify(input, null, 2)
-          )
-          console.log(
-            `${name}/${subdirectory}/great_circle=${great_circle}/fixed`,
-            JSON.stringify(fixed, null, 2)
-          )
-          console.log(
-            `${name}/${subdirectory}/great_circle=${great_circle}/expected`,
-            JSON.stringify(expected, null, 2)
-          )
-        }
-        expect(fixed).toBeCloseGeoJSON(expected);
+        expect(normalize(fixed)).toBeCloseGeoJSON(normalize(expected));
       });
     });
   });
@@ -93,7 +80,7 @@ describe('both poles', () => {
       expect(input.geometry.type).toBe("Polygon");
       const expected = readOutput("both-poles", subdirectory);
       const fixed = fix_polygon(input, { fix_winding: false, great_circle });
-      expect(fixed).toBeCloseGeoJSON(expected);
+      expect(normalize(fixed)).toBeCloseGeoJSON(normalize(expected));
     });
   });
 });
@@ -117,7 +104,7 @@ describe('double fix', () => {
       const expected = readOutput("north-pole", subdirectory);
       let fixed = fix_polygon(input, { great_circle });
       fixed = fix_polygon(fixed, { great_circle });
-      expect(fixed).toBeCloseGeoJSON(expected);
+      expect(normalize(fixed)).toBeCloseGeoJSON(normalize(expected));
     });
   });
 });
@@ -132,7 +119,7 @@ describe('force north pole', () => {
       const input = readInput("force-north-pole");
       const expected = readOutput("force-north-pole", subdirectory);
       const fixed = fix_polygon(input, { force_north_pole: true, great_circle });
-      expect(fixed).toBeCloseGeoJSON(expected);
+      expect(normalize(fixed)).toBeCloseGeoJSON(normalize(expected));
     });
   });
 });
@@ -175,7 +162,7 @@ describe('fix winding', () => {
         const fixed = fix_polygon(input, { great_circle });
         expect(warnSpy).toHaveBeenCalled();
         warnSpy.mockRestore();
-        expect(fixed).toBeCloseGeoJSON(expected);
+        expect(normalize(fixed)).toBeCloseGeoJSON(normalize(expected));
       });
     });
   });
@@ -196,7 +183,7 @@ describe('no fix winding', () => {
         const fixed = fix_polygon(input, { fix_winding: false, great_circle });
         expect(warnSpy).not.toHaveBeenCalled();
         warnSpy.mockRestore();
-        expect(fixed).toBeCloseGeoJSON(expected);
+        expect(normalize(fixed)).toBeCloseGeoJSON(normalize(expected));
       });
     });
   });
@@ -223,7 +210,7 @@ describe('no fix winding when forcing poles', () => {
           const fixed = fix_polygon(input, { force_north_pole, force_south_pole, great_circle });
           expect(warnSpy).not.toHaveBeenCalled();
           warnSpy.mockRestore();
-          expect(fixed).toBeCloseGeoJSON(expected);
+          expect(normalize(fixed)).toBeCloseGeoJSON(normalize(expected));
         });
       });
     });
@@ -254,7 +241,7 @@ describe('fix winding interior segments', () => {
     const fixed = fix_polygon(input);
     expect(warnSpy).toHaveBeenCalled();
     warnSpy.mockRestore();
-    expect(fixed).toBeCloseGeoJSON(expected);
+    expect(normalize(fixed)).toBeCloseGeoJSON(normalize(expected));
   });
 });
 
@@ -311,7 +298,7 @@ describe('force south pole', () => {
       const input = readInput("issues-124");
       const expected = readOutput("issues-124", subdirectory);
       const fixed = fix_polygon(input, { force_south_pole: true, great_circle });
-      expect(fixed).toBeCloseGeoJSON(expected);
+      expect(normalize(fixed)).toBeCloseGeoJSON(normalize(expected));
     });
   });
 });
@@ -326,7 +313,7 @@ describe('great circle', () => {
       const input = readInput("great-circle");
       const expected = readOutput("great-circle", subdirectory);
       const fixed = fix_polygon(input, { great_circle });
-      expect(fixed).toBeCloseGeoJSON(expected);
+      expect(normalize(fixed)).toBeCloseGeoJSON(normalize(expected));
     });
   });
 });

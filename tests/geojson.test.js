@@ -8,7 +8,6 @@ describe('fix_geojson', () => {
     (great_circle) => {
       const feature = readInput("simple");
       feature.properties = { foo: "bar" };
-      console.log(feature)
       const fixed = fix_geojson(feature, { great_circle });
       expect(fixed.properties.foo).toBe("bar");
     }
