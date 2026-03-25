@@ -249,15 +249,17 @@ describe('centroid', () => {
   test('centroid simple', () => {
     const input = readInput("simple");
     const c = centroid(input);
-    expect(c.x).toBe(95);
-    expect(c.y).toBe(45);
+    expect(c.geometry.type).toBe("Point");
+    expect(c.geometry.coordinates[0]).toBe(95);
+    expect(c.geometry.coordinates[1]).toBe(45);
   });
 
   test('centroid split', () => {
     const input = readOutput("split");
     const c = centroid(input);
-    expect(c.x).toBe(180);
-    expect(c.y).toBe(45);
+    expect(c.geometry.type).toBe("Point");
+    expect(c.geometry.coordinates[0]).toBe(180);
+    expect(c.geometry.coordinates[1]).toBe(45);
   });
 
   test('centroid split with shift', () => {
@@ -265,8 +267,9 @@ describe('centroid', () => {
     input = translate(input, 1, 0);
     input = fix_polygon(input, { great_circle: false });
     const c = centroid(input);
-    expect(c.x).toBe(-179);
-    expect(c.y).toBe(45);
+    expect(c.geometry.type).toBe("Point");
+    expect(c.geometry.coordinates[0]).toBe(-179);
+    expect(c.geometry.coordinates[1]).toBe(45);
   });
 });
 
@@ -317,4 +320,3 @@ describe('great circle', () => {
     });
   });
 });
-
