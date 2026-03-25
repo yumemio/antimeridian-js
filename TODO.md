@@ -4,14 +4,14 @@
 
 1. ~~Restore winding warnings so the behavior and tests match again.~~
 2. ~~Fix the broken GeoJSON matcher usage in `tests/lineString.test.js`.~~
-3. Resolve the centroid contract mismatch between implementation and tests.
-4. Add raw-geometry support and decouple the public API from Turf `Feature` assumptions.
+3. Add raw-geometry support and decouple the public API from Turf `Feature` assumptions.
+4. Resolve remaining implementation mismatches after input normalization.
 5. Catch up with upstream changes after the suite is green.
 
 ## Fix Remaining Test Failures On `temp/20250427`
 
 - `fix_polygon` still crashes on raw Polygon geometries in tests like the antimeridian-overlap and Z-coordinate cases because it assumes `polygon.geometry.coordinates` exists.
-- Centroid tests still fail because `centroid()` returns a Turf `Point` feature, while the current tests expect `.x` / `.y` fields.
+- `centroid split with shift` still fails after the centroid test contract cleanup, so that case is now an implementation mismatch rather than a test-shape mismatch.
 - Keep the normalized polygon/multipolygon comparisons from this branch, but do not use them to hide real behavioral regressions.
 
 ## Decouple Public API From Turf Feature Inputs

@@ -76,8 +76,7 @@ export function fix_geojson(
     return geojson;
   } else {
     // Assume it's a raw geometry.
-    const fixed = fix_shape({ geometry: geojson, properties: {} }, { force_north_pole, force_south_pole, fix_winding, great_circle });
-    return fixed.geometry;
+    return fix_shape(geojson, { force_north_pole, force_south_pole, fix_winding, great_circle });
   }
 }
 
@@ -139,18 +138,24 @@ export function fix_shape(
   shape,
   { force_north_pole = false, force_south_pole = false, fix_winding = true, great_circle = true } = {}
 ) {
-  if (!shape || !shape.geometry || !shape.geometry.type) {
+  const returnGeometry = !isFeature(shape);
+  const feature = asFeature(shape);
+  if (!feature || !feature.geometry || !feature.geometry.type) {
     throw new Error("Invalid shape: missing geometry type.");
   }
-  const type = shape.geometry.type;
+  const type = feature.geometry.type;
   if (type === "Polygon") {
-    return fix_polygon(shape, { force_north_pole, force_south_pole, fix_winding, great_circle });
+    const fixed = fix_polygon(feature, { force_north_pole, force_south_pole, fix_winding, great_circle });
+    return returnGeometry ? fixed.geometry : fixed;
   } else if (type === "MultiPolygon") {
-    return fix_multipolygon(shape, { force_north_pole, force_south_pole, fix_winding, great_circle });
+    const fixed = fix_multipolygon(feature, { force_north_pole, force_south_pole, fix_winding, great_circle });
+    return returnGeometry ? fixed.geometry : fixed;
   } else if (type === "LineString") {
-    return fix_line_string(shape, great_circle);
+    const fixed = fix_line_string(feature, great_circle);
+    return returnGeometry ? fixed.geometry : fixed;
   } else if (type === "MultiLineString") {
-    return fix_multi_line_string(shape, great_circle);
+    const fixed = fix_multi_line_string(feature, great_circle);
+    return returnGeometry ? fixed.geometry : fixed;
   } else {
     throw new Error(`Unsupported geometry type: ${type}`);
   }
@@ -168,23 +173,24 @@ export function fix_shape(
  * @throws {Error} If the geometry type is unsupported.
  */
 export function segment_shape(shape, great_circle) {
-  if (!shape || !shape.geometry || !shape.geometry.type) {
+  const feature = asFeature(shape);
+  if (!feature || !feature.geometry || !feature.geometry.type) {
     throw new Error("Invalid shape object: missing geometry type.");
   }
-  if (shape.geometry.type === "Polygon") {
-    return segment_polygon(shape, great_circle);
-  } else if (shape.geometry.type === "MultiPolygon") {
+  if (feature.geometry.type === "Polygon") {
+    return segment_polygon(feature, great_circle);
+  } else if (feature.geometry.type === "MultiPolygon") {
     const segments = [];
     // Each polygon in a MultiPolygon is an array of rings.
-    for (const polyCoords of shape.geometry.coordinates) {
+    for (const polyCoords of feature.geometry.coordinates) {
       // Build a Turf.js Polygon feature from polyCoords.
-      const polyFeature = turf.polygon(polyCoords, shape.properties);
+      const polyFeature = turf.polygon(polyCoords, feature.properties);
       const segs = segment_polygon(polyFeature, great_circle);
       segments.push(...segs);
     }
     return segments;
   } else {
-    throw new Error(`Unsupported geometry type: ${shape.geometry.type}`);
+    throw new Error(`Unsupported geometry type: ${feature.geometry.type}`);
   }
 }
 
@@ -206,17 +212,20 @@ export function fix_multipolygon(
   multiPolygon,
   { force_north_pole = false, force_south_pole = false, fix_winding = true, great_circle = true } = {}
 ) {
+  const returnGeometry = !isFeature(multiPolygon);
+  const feature = asFeature(multiPolygon);
   // Process each polygon in the MultiPolygon.
   const allPolys = [];
-  for (const polyCoords of multiPolygon.geometry.coordinates) {
+  for (const polyCoords of feature.geometry.coordinates) {
     // Construct a Turf.js Polygon feature for each set of coordinates.
-    const polyFeature = turf.polygon(polyCoords, multiPolygon.properties);
+    const polyFeature = turf.polygon(polyCoords, feature.properties);
     const fixedParts = fix_polygon_to_list(polyFeature, { force_north_pole, force_south_pole, fix_winding, great_circle });
     allPolys.push(...fixedParts);
   }
   // Combine all fixed polygons into a MultiPolygon.
   const multiCoords = allPolys.map(p => p.geometry.coordinates);
-  return turf.multiPolygon(multiCoords, multiPolygon.properties);
+  const fixed = turf.multiPolygon(multiCoords, feature.properties);
+  return returnGeometry ? fixed.geometry : fixed;
 }
 
 /**
@@ -238,16 +247,18 @@ export function fix_polygon(
   polygon,
   { force_north_pole = false, force_south_pole = false, fix_winding = true, great_circle = true } = {}
 ) {
+  const returnGeometry = !isFeature(polygon);
+  const feature = asFeature(polygon);
   // When forcing a pole, we disable winding fixes.
   if (force_north_pole || force_south_pole) {
     fix_winding = false;
   }
-  const fixedPolys = fix_polygon_to_list(polygon, { force_north_pole, force_south_pole, fix_winding, great_circle });
+  const fixedPolys = fix_polygon_to_list(feature, { force_north_pole, force_south_pole, fix_winding, great_circle });
   if (fixedPolys.length === 1) {
     const poly = fixedPolys[0];
     // If the exterior ring is oriented counterclockwise, all is well.
     if (isCCW(poly.geometry.coordinates[0])) {
-      return poly;
+      return returnGeometry ? poly.geometry : poly;
     } else {
       // Otherwise, return a polygon whose exterior is the full world and whose hole is the original polygon.
       const worldRing = [
@@ -257,12 +268,14 @@ export function fix_polygon(
         [180, 90],
         [-180, 90]
       ];
-      return turf.polygon([worldRing, poly.geometry.coordinates[0]], polygon.properties);
+      const fixed = turf.polygon([worldRing, poly.geometry.coordinates[0]], feature.properties);
+      return returnGeometry ? fixed.geometry : fixed;
     }
   } else {
     // More than one fixed polygon: return a MultiPolygon feature.
     const multipolyCoords = fixedPolys.map(p => p.geometry.coordinates);
-    return turf.multiPolygon(multipolyCoords, polygon.properties);
+    const fixed = turf.multiPolygon(multipolyCoords, feature.properties);
+    return returnGeometry ? fixed.geometry : fixed;
   }
 }
 
@@ -277,13 +290,16 @@ export function fix_polygon(
  * @returns {Object} A Turf.js LineString or MultiLineString feature.
  */
 export function fix_line_string(lineString, great_circle) {
-  const coords = lineString.geometry.coordinates;
+  const returnGeometry = !isFeature(lineString);
+  const feature = asFeature(lineString);
+  const coords = feature.geometry.coordinates;
   const segments = segment(coords, great_circle);
 
   if (!segments || segments.length === 0) {
-    return lineString;
+    return returnGeometry ? feature.geometry : feature;
   } else {
-    return turf.multiLineString(segments, lineString.properties);
+    const fixed = turf.multiLineString(segments, feature.properties);
+    return returnGeometry ? fixed.geometry : fixed;
   }
 }
 
@@ -299,10 +315,12 @@ export function fix_line_string(lineString, great_circle) {
  * @returns {Object} A Turf.js MultiLineString feature.
  */
 export function fix_multi_line_string(multiLineString, great_circle) {
+  const returnGeometry = !isFeature(multiLineString);
+  const feature = asFeature(multiLineString);
   const fixedLineStrings = [];
   // multiLineString.geometry.coordinates is an array of LineString coordinate arrays.
-  for (const lineCoords of multiLineString.geometry.coordinates) {
-    const lineFeature = turf.lineString(lineCoords, multiLineString.properties);
+  for (const lineCoords of feature.geometry.coordinates) {
+    const lineFeature = turf.lineString(lineCoords, feature.properties);
     const fixed = fix_line_string(lineFeature, great_circle);
 
     if (fixed.geometry.type === "LineString") {
@@ -313,7 +331,8 @@ export function fix_multi_line_string(multiLineString, great_circle) {
       }
     }
   }
-  return turf.multiLineString(fixedLineStrings, multiLineString.properties);
+  const fixed = turf.multiLineString(fixedLineStrings, feature.properties);
+  return returnGeometry ? fixed.geometry : fixed;
 }
 
 /**
@@ -1079,4 +1098,25 @@ function orientPolygon(polygon) {
     interiors.push(orientRing(polygon.geometry.coordinates[i], false));
   }
   return turf.polygon([exterior, ...interiors], polygon.properties);
+}
+
+function isFeature(shape) {
+  return !!shape && shape.type === "Feature";
+}
+
+function asFeature(shape) {
+  if (isFeature(shape)) {
+    return shape;
+  }
+  if (shape && shape.geometry && shape.geometry.type) {
+    return {
+      type: "Feature",
+      geometry: shape.geometry,
+      properties: shape.properties || {}
+    };
+  }
+  if (!shape || !shape.type) {
+    throw new Error("Invalid shape: missing type.");
+  }
+  return turf.feature(shape, shape.properties || {});
 }
