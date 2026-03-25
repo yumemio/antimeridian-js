@@ -385,8 +385,8 @@ export function fix_polygon_to_list(
       (!isCCW(poly.geometry.coordinates[0]) ||
        polygon.geometry.coordinates.slice(1).some(ring => isCCW(ring)))
     ) {
+      FixWindingWarning.warn();
       poly = orientPolygon(poly);
-    } else {
     }
     return [poly];
   } else {
@@ -398,6 +398,7 @@ export function fix_polygon_to_list(
         if (fix_winding) {
           const unwrapped = interior.map(([x, y, ...rest]) => [(((x % 360) + 360) % 360), y, ...rest]);
           if (isCCW(unwrapped)) {
+            FixWindingWarning.warn();
             const reversed = interior.slice().reverse();
             const newInteriorSegs = segment(reversed, great_circle);
             segs.push(...newInteriorSegs);
@@ -1079,4 +1080,3 @@ function orientPolygon(polygon) {
   }
   return turf.polygon([exterior, ...interiors], polygon.properties);
 }
-
