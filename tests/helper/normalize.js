@@ -1,57 +1,103 @@
 /**
- * Normalize a GeoJSON Polygon or MultiPolygon by rotating each ring so that
- * the lexicographically smallest coordinate appears first. This ensures consistent ordering.
+ * Normalize GeoJSON coordinate ordering to approximate GEOS normalize()
  *
- * @param {object} geom - A GeoJSON geometry or Feature with a Polygon or MultiPolygon.
- * @returns {object} A new geometry with normalized coordinate ordering.
+ * This canonicalizes:
+ * - line direction for LineString / MultiLineString
+ * - ring start point and ring orientation for Polygon / MultiPolygon
+ * - part ordering for multipart geometry objects
+ * so that serialization order does not affect test results.
+ *
+ * @param {object} geom - A GeoJSON geometry or Feature.
+ * @returns {object} A new geometry with canonicalized coordinate ordering.
  */
 function normalize(geom) {
-  // If geom is a Feature, normalize its geometry.
   if (geom.type === 'Feature' && geom.geometry) {
     return {
       ...geom,
-      geometry: normalize(geom.geometry)
+      geometry: normalize(geom.geometry),
     };
   }
 
-  // Normalize a Polygon geometry.
+  if (geom.type === 'LineString') {
+    return {
+      type: 'LineString',
+      coordinates: normalizeLine(geom.coordinates),
+    };
+  }
+
+  if (geom.type === 'MultiLineString') {
+    const coordinates = geom.coordinates
+      .map(normalizeLine)
+      .sort(compareCoordinateArrays);
+    return {
+      type: 'MultiLineString',
+      coordinates,
+    };
+  }
+
   if (geom.type === 'Polygon') {
     return {
       type: 'Polygon',
-      coordinates: geom.coordinates.map(normalizeRing)
+      coordinates: normalizePolygonCoordinates(geom.coordinates),
     };
   }
 
-  // Normalize a MultiPolygon geometry.
   if (geom.type === 'MultiPolygon') {
+    const coordinates = geom.coordinates
+      .map(normalizePolygonCoordinates)
+      .sort(comparePolygonCoordinates);
     return {
       type: 'MultiPolygon',
-      coordinates: geom.coordinates.map(polygon => polygon.map(normalizeRing))
+      coordinates,
     };
   }
 
-  // For other types, return as is.
   return geom;
 }
 
-/**
- * Normalize a ring by ensuring it is closed and rotating its coordinates so that the
- * smallest (lexicographically) coordinate is first.
- *
- * @param {Array<Array<number>>} ring - An array of [lon, lat] coordinates.
- * @returns {Array<Array<number>>} The normalized ring.
- */
-function normalizeRing(ring) {
-  // Ensure the ring is closed: the first and last coordinates are identical.
-  let coords = ring.slice();
-  if (!areCoordsEqual(coords[0], coords[coords.length - 1])) {
-    coords.push(coords[0]);
+// Normalize Polygon
+function normalizePolygonCoordinates(coordinates) {
+  if (coordinates.length === 0) {
+    return coordinates;
   }
 
-  // Remove the duplicate closing coordinate for processing.
+  // Normalize the shell
+  const shell = normalizeRing(coordinates[0], true);
+
+  // Normalize holes
+  const holes = coordinates
+    .slice(1)
+    .map((ring) => normalizeRing(ring, false))
+    .sort(compareCoordinateArrays);
+
+  return [shell, ...holes];
+}
+
+// Normalize LineString
+function normalizeLine(line) {
+  const coords = line.map(copyCoordinate);
+  if (coords.length === 0) {
+    return coords;
+  }
+
+  // Normalize line direction
+  if (compareCoords(coords[0], coords[coords.length - 1]) > 0) {
+    coords.reverse();
+  }
+
+  return coords;
+}
+
+// Normalize a ring
+function normalizeRing(ring, clockwise) {
+  const coords = closeRing(ring.map(copyCoordinate));
   const openRing = coords.slice(0, -1);
 
-  // Find the index of the lexicographically smallest coordinate.
+  if (openRing.length === 0) {
+    return coords;
+  }
+
+  // Normalize the starting point
   let minIndex = 0;
   for (let i = 1; i < openRing.length; i++) {
     if (compareCoords(openRing[i], openRing[minIndex]) < 0) {
@@ -59,39 +105,93 @@ function normalizeRing(ring) {
     }
   }
 
-  // Rotate the array so that the smallest coordinate comes first.
-  const rotated = openRing.slice(minIndex).concat(openRing.slice(0, minIndex));
-  // Re-close the ring.
-  rotated.push(rotated[0]);
-  return rotated;
+  const rotated = rotate(openRing, minIndex);
+  rotated.push(copyCoordinate(rotated[0]));
+
+  // Enforce canonical orientation as directed by the param
+  // CCW for exterior rings, CW for holes
+  const shouldReverse = isCCW(rotated) === clockwise;
+  if (shouldReverse) {
+    rotated.reverse();
+  }
+
+  return closeRing(rotated);
 }
 
-/**
- * Compare two coordinates lexicographically.
- *
- * @param {Array<number>} a - The first coordinate.
- * @param {Array<number>} b - The second coordinate.
- * @returns {number} -1 if a < b, 1 if a > b, or 0 if equal.
- */
+// Rotate an open coordinate sequence so the chosen index becomes the start
+function rotate(coords, startIndex) {
+  return coords.slice(startIndex).concat(coords.slice(0, startIndex));
+}
+
+// Ensure a ring is closed
+function closeRing(ring) {
+  if (ring.length === 0) {
+    return ring;
+  }
+  if (!areCoordsEqual(ring[0], ring[ring.length - 1])) {
+    return ring.concat([copyCoordinate(ring[0])]);
+  }
+  return ring;
+}
+
+function isCCW(ring) {
+  return signedArea(ring) > 0;
+}
+
+// Shoelace signed area, positive implies counterclockwise winding
+function signedArea(ring) {
+  let area = 0;
+  for (let i = 0; i < ring.length - 1; i++) {
+    const [x1, y1] = ring[i];
+    const [x2, y2] = ring[i + 1];
+    area += x1 * y2 - x2 * y1;
+  }
+  return area / 2;
+}
+
+// Sort order for normalized polygon parts
+// Used for MultiPolygon sorting
+function comparePolygonCoordinates(a, b) {
+  const len = Math.min(a.length, b.length);
+  for (let i = 0; i < len; i++) {
+    const cmp = compareCoordinateArrays(a[i], b[i]);
+    if (cmp !== 0) {
+      return cmp;
+    }
+  }
+  return a.length - b.length;
+}
+
+// Lexicographic comparison for arrays of coordinates
+// Each array should already be normalized
+function compareCoordinateArrays(a, b) {
+  const len = Math.min(a.length, b.length);
+  for (let i = 0; i < len; i++) {
+    const cmp = compareCoords(a[i], b[i]);
+    if (cmp !== 0) {
+      return cmp;
+    }
+  }
+  return a.length - b.length;
+}
+
+// Lexicographic coordinate comparison
 function compareCoords(a, b) {
   for (let i = 0; i < Math.min(a.length, b.length); i++) {
     if (a[i] < b[i]) return -1;
     if (a[i] > b[i]) return 1;
   }
-  return 0;
+  return a.length - b.length;
 }
 
-/**
- * Check if two coordinates are equal.
- *
- * @param {Array<number>} a - The first coordinate.
- * @param {Array<number>} b - The second coordinate.
- * @returns {boolean} True if equal, otherwise false.
- */
 function areCoordsEqual(a, b) {
   return a.length === b.length && a.every((val, idx) => val === b[idx]);
 }
 
-module.exports = {
-  normalize
+function copyCoordinate(coord) {
+  return coord.slice();
 }
+
+module.exports = {
+  normalize,
+};
