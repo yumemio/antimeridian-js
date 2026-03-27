@@ -1,7 +1,6 @@
 import * as turf from '@turf/turf';
 
 import {
-  helloWorld,
   spherical_degrees_to_cartesian,
   crossing_latitude,
   crossing_latitude_great_circle,
@@ -13,7 +12,7 @@ import {
   extend_over_poles,
   fix_polygon_to_list,
   fix_polygon,
-  fix_multipolygon,
+  fix_multi_polygon,
   isCCW,
   segment_polygon,
   segment_shape,
@@ -26,10 +25,6 @@ import {
   bbox,
   centroid
 } from "../src/index.js";
-
-test("helloWorld function should return the expected greeting", () => {
-  expect(helloWorld()).toBe("Hello from my-npm-package!");
-});
 
 describe('spherical_degrees_to_cartesian', () => {
   test('converts [0, 0] correctly', () => {
@@ -474,7 +469,7 @@ describe('fix_polygon', () => {
   });
 });
 
-describe('fix_multipolygon', () => {
+describe('fix_multi_polygon', () => {
   test('fixes each constituent polygon and returns a MultiPolygon', () => {
     // Create a MultiPolygon feature composed of two simple polygons.
     const poly1 = [
@@ -496,7 +491,7 @@ describe('fix_multipolygon', () => {
       ]
     ];
     const multi = turf.multiPolygon([poly1, poly2], { id: 'multipoly' });
-    const result = fix_multipolygon(multi, { fix_winding: true, great_circle: true });
+    const result = fix_multi_polygon(multi, { fix_winding: true, great_circle: true });
     expect(result.geometry.type).toBe('MultiPolygon');
     expect(result.properties.id).toBe('multipoly');
     // Check that each constituent polygon has a closed exterior ring.

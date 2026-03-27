@@ -8,13 +8,6 @@
 import * as turf from '@turf/turf';
 
 /**
- * Test function - to be removed
- */
-export function helloWorld() {
-  return "Hello from my-npm-package!";
-}
-
-/**
  * Base class for all package-specific warnings.
  */
 export class AntimeridianWarning extends Error {
@@ -39,17 +32,13 @@ export class FixWindingWarning extends AntimeridianWarning {
 /**
  * Fixes a GeoJSON object that may cross the antimeridian.
  *
- * If the object is a Feature, its geometry is fixed (via fix_shape) and updated.
- * If the object is a FeatureCollection, each feature is fixed recursively.
- * Otherwise, it is assumed to be a raw geometry and is fixed accordingly.
- *
- * @param {Object} geojson - A GeoJSON object.
+ * @param {Object} geojson - A GeoJSON geometry, Feature, or FeatureCollection.
  * @param {Object} options - Options.
  * @param {boolean} [options.force_north_pole=false]
  * @param {boolean} [options.force_south_pole=false]
  * @param {boolean} [options.fix_winding=true]
  * @param {boolean} [options.great_circle=true]
- * @returns {Object} The fixed GeoJSON object.
+ * @returns {Object} The fixed object in the same top-level container kind as the input.
  */
 export function fix_geojson(
   geojson,
@@ -121,18 +110,18 @@ export function segment_geojson(geojson, great_circle) {
 }
 
 /**
- * Fixes a Turf.js shape (Feature) that may cross the antimeridian.
+ * Fixes a geometry or Feature that may cross the antimeridian.
  *
  * Depending on the geometry type (Polygon, MultiPolygon, LineString, or MultiLineString),
  * dispatches to the corresponding fix function.
  *
- * @param {Object} shape - A Turf.js Feature (with geometry).
+ * @param {Object} shape - A raw GeoJSON geometry or Feature.
  * @param {Object} options - Options.
  * @param {boolean} [options.force_north_pole=false]
  * @param {boolean} [options.force_south_pole=false]
  * @param {boolean} [options.fix_winding=true]
  * @param {boolean} [options.great_circle=true]
- * @returns {Object} A fixed Turf.js Feature.
+ * @returns {Object} A fixed geometry or Feature matching the input container kind.
  */
 export function fix_shape(
   shape,
@@ -148,7 +137,7 @@ export function fix_shape(
     const fixed = fix_polygon(feature, { force_north_pole, force_south_pole, fix_winding, great_circle });
     return returnGeometry ? fixed.geometry : fixed;
   } else if (type === "MultiPolygon") {
-    const fixed = fix_multipolygon(feature, { force_north_pole, force_south_pole, fix_winding, great_circle });
+    const fixed = fix_multi_polygon(feature, { force_north_pole, force_south_pole, fix_winding, great_circle });
     return returnGeometry ? fixed.geometry : fixed;
   } else if (type === "LineString") {
     const fixed = fix_line_string(feature, great_circle);
@@ -162,12 +151,12 @@ export function fix_shape(
 }
 
 /**
- * Segments a Turf.js shape (Polygon or MultiPolygon) into an array of segments.
+ * Segments a polygonal geometry or Feature into an array of line segments.
  *
  * If the input is a Polygon, segment_polygon() is called directly. For a MultiPolygon,
  * each constituent polygon is processed, and all segments are returned in a single array.
  *
- * @param {Object} shape - A Turf.js Feature with geometry type "Polygon" or "MultiPolygon".
+ * @param {Object} shape - A Polygon or MultiPolygon geometry, or a Feature wrapping one.
  * @param {boolean} great_circle - If true, use great circle calculations for segmentation.
  * @returns {Array.<Array.<[number, number]>>} Array of segments.
  * @throws {Error} If the geometry type is unsupported.
@@ -195,20 +184,20 @@ export function segment_shape(shape, great_circle) {
 }
 
 /**
- * Fixes a Turf.js MultiPolygon feature that may cross the antimeridian.
+ * Fixes a MultiPolygon geometry or Feature that may cross the antimeridian.
  *
  * Each constituent polygon is fixed individually (via fix_polygon_to_list),
- * and then all results are combined into a single MultiPolygon feature.
+ * and then all results are combined into a single MultiPolygon.
  *
- * @param {Object} multiPolygon - A Turf.js MultiPolygon feature.
+ * @param {Object} multiPolygon - A MultiPolygon geometry or Feature.
  * @param {Object} [options] - Options object.
  * @param {boolean} [options.force_north_pole=false]
  * @param {boolean} [options.force_south_pole=false]
  * @param {boolean} [options.fix_winding=true]
  * @param {boolean} [options.great_circle=true]
- * @returns {Object} A Turf.js MultiPolygon feature.
+ * @returns {Object} A MultiPolygon geometry or Feature matching the input container kind.
  */
-export function fix_multipolygon(
+export function fix_multi_polygon(
   multiPolygon,
   { force_north_pole = false, force_south_pole = false, fix_winding = true, great_circle = true } = {}
 ) {
@@ -229,19 +218,20 @@ export function fix_multipolygon(
 }
 
 /**
- * Fixes a Turf.js Polygon feature that may cross the antimeridian.
+ * Fixes a Polygon geometry or Feature that may cross the antimeridian.
  *
  * If the fixed polygon (from fix_polygon_to_list) is single and its exterior ring
  * is not oriented counterclockwise, then a new polygon is created whose exterior
  * is a full-world ring and whose interior ring is the original polygon’s exterior.
  *
- * @param {Object} polygon - A Turf.js Polygon feature.
+ * @param {Object} polygon - A Polygon geometry or Feature.
  * @param {Object} [options] - Options object.
  * @param {boolean} [options.force_north_pole=false]
  * @param {boolean} [options.force_south_pole=false]
  * @param {boolean} [options.fix_winding=true]
  * @param {boolean} [options.great_circle=true]
- * @returns {Object} Either a Turf.js Polygon feature or a Turf.js MultiPolygon feature.
+ * @returns {Object} A Polygon or MultiPolygon geometry, or the corresponding Feature type,
+ * matching the input container kind.
  */
 export function fix_polygon(
   polygon,
@@ -280,14 +270,15 @@ export function fix_polygon(
 }
 
 /**
- * Fixes a Turf.js LineString feature that may cross the antimeridian.
+ * Fixes a LineString geometry or Feature that may cross the antimeridian.
  *
  * If the line does not cross the antimeridian, returns the original LineString.
- * Otherwise, returns a Turf.js MultiLineString feature constructed from the segmented parts.
+ * Otherwise, returns a MultiLineString built from the segmented parts.
  *
- * @param {Object} lineString - A Turf.js LineString feature.
+ * @param {Object} lineString - A LineString geometry or Feature.
  * @param {boolean} great_circle - Use great circle calculations if true.
- * @returns {Object} A Turf.js LineString or MultiLineString feature.
+ * @returns {Object} A LineString or MultiLineString geometry, or the corresponding
+ * Feature type, matching the input container kind.
  */
 export function fix_line_string(lineString, great_circle) {
   const returnGeometry = !isFeature(lineString);
@@ -304,15 +295,15 @@ export function fix_line_string(lineString, great_circle) {
 }
 
 /**
- * Fixes a Turf.js MultiLineString feature that may cross the antimeridian.
+ * Fixes a MultiLineString geometry or Feature that may cross the antimeridian.
  *
  * Each constituent LineString is processed via fix_line_string. If the fixed result is a LineString,
  * its coordinates are added to the output array; if it is a MultiLineString, each of its line strings is added.
- * Finally, returns a new Turf.js MultiLineString feature composed of all fixed line strings.
+ * Finally, returns a new MultiLineString composed of all fixed line strings.
  *
- * @param {Object} multiLineString - A Turf.js MultiLineString feature.
+ * @param {Object} multiLineString - A MultiLineString geometry or Feature.
  * @param {boolean} great_circle - Use great circle calculations if true.
- * @returns {Object} A Turf.js MultiLineString feature.
+ * @returns {Object} A MultiLineString geometry or Feature matching the input container kind.
  */
 export function fix_multi_line_string(multiLineString, great_circle) {
   const returnGeometry = !isFeature(multiLineString);
@@ -866,7 +857,7 @@ export function is_self_closing(segment) {
  * If the shape is a MultiPolygon and it crosses the antimeridian (or if force_over_antimeridian is true),
  * the bounding box is returned as [max(xmins), ymin, min(xmaxs), ymax]. Otherwise, [min(xmins), ymin, max(xmaxs), ymax].
  *
- * @param {Object} shape - A Turf.js Feature or raw geometry (Polygon or MultiPolygon).
+ * @param {Object} shape - A Polygon or MultiPolygon geometry, or a Feature wrapping one.
  * @param {boolean} [force_over_antimeridian=false] - If true, force the bounding box to be over the antimeridian.
  * @returns {Array<number>} The bounding box as [minX, minY, maxX, maxY] (or the antimeridian version).
  * @throws {Error} if the geometry type is not Polygon or MultiPolygon.
@@ -914,8 +905,8 @@ export function bbox(shape, force_over_antimeridian = false) {
  * For a MultiPolygon, components with any negative longitudes are translated by +360,
  * the centroid is computed from the resulting MultiPolygon, and then adjusted back if needed.
  *
- * @param {Object} shape - A Turf.js Feature or raw geometry (Polygon or MultiPolygon).
- * @returns {Object} A Turf.js Point feature representing the centroid.
+ * @param {Object} shape - A Polygon or MultiPolygon geometry, or a Feature wrapping one.
+ * @returns {Object} A Point Feature representing the centroid.
  * @throws {Error} if the geometry type is not supported.
  */
 export function centroid(shape) {
@@ -957,15 +948,15 @@ export function centroid(shape) {
 }
 
 /**
- * Checks if a Turf.js Polygon feature is coincident to the antimeridian.
+ * Checks if a Polygon Feature is coincident to the antimeridian.
  *
  * Iterates over each consecutive pair of points in the exterior ring.
  * If a pair is found where the absolute value of the longitude is 180
  * (and both points share that same longitude), the function returns true.
  *
- * @param {Object} polygon - A Turf.js Polygon feature.
+ * @param {Object} polygon - A Polygon Feature.
  * @returns {boolean} True if the polygon is coincident to the antimeridian, false otherwise.
- * @throws {Error} if the input is not a valid Turf.js Polygon.
+ * @throws {Error} if the input is not a valid Polygon Feature.
  */
 export function is_coincident_to_antimeridian(polygon) {
   if (!polygon || !polygon.geometry || polygon.geometry.type !== "Polygon") {

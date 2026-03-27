@@ -1,10 +1,10 @@
 import * as turf from '@turf/turf';
 
 const { readInput, readOutput } = require('./conftest');
-const { fix_multipolygon, fix_shape } = require('../src/index.js'); // Adjust the path as needed
+const { fix_multi_polygon, fix_shape } = require('../src/index.js'); // Adjust the path as needed
 const { normalize } = require('./helper/normalize');
 
-describe('fix_multipolygon', () => {
+describe('fix_multi_polygon', () => {
   // Parameterize over two test names and two subdirectories/great_circle settings.
   const names = ["multi-split", "multi-no-antimeridian"];
   const settings = [
@@ -17,7 +17,7 @@ describe('fix_multipolygon', () => {
         const input = readInput(name);
         // In our port, we expect the input to be a MultiPolygon GeoJSON object.
         const expected = readOutput(name, subdirectory);
-        const fixed = fix_multipolygon(input, { great_circle });
+        const fixed = fix_multi_polygon(input, { great_circle });
         // We assume our fixed MultiPolygon is valid and exactly matches the expected output.
         expect(normalize(fixed)).toEqual(normalize(expected));
       });
@@ -39,4 +39,3 @@ describe('fix_shape (smoke test)', () => {
     }
   );
 });
-
