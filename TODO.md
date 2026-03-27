@@ -5,13 +5,12 @@
 1. ~~Restore winding warnings so the behavior and tests match again.~~
 2. ~~Fix the broken GeoJSON matcher usage in `tests/lineString.test.js`.~~
 3. ~~Add the minimal raw-geometry boundary support needed to eliminate adapter failures from the test suite.~~
-4. Resolve remaining implementation mismatches once the suite only reflects real geometry behavior.
+4. ~~Resolve remaining implementation mismatches once the suite only reflects real geometry behavior.~~
 5. Catch up with upstream changes after the suite is green.
 
-## Fix Remaining Test Failures On `temp/20250427`
+## Test Suite Status
 
-- `fix_polygon` still crashes on raw Polygon geometries in tests like the antimeridian-overlap and Z-coordinate cases because it assumes `polygon.geometry.coordinates` exists.
-- `centroid split with shift` still fails after the centroid test contract cleanup, so that case is now an implementation mismatch rather than a test-shape mismatch.
+- `npm test -- --runInBand` is green on `temp/20250427`.
 - Keep the normalized polygon/multipolygon comparisons from this branch, but do not use them to hide real behavioral regressions.
 
 ## Decouple Public API From Turf Feature Inputs

@@ -7,7 +7,12 @@ const { normalize } = require('./helper/normalize');
 
 // Helper function to translate a GeoJSON geometry by (dx, dy)
 function translate(geom, dx, dy) {
-  if (geom.type === "Polygon") {
+  if (geom.type === "Feature") {
+    return {
+      ...geom,
+      geometry: translate(geom.geometry, dx, dy),
+    };
+  } else if (geom.type === "Polygon") {
     return {
       ...geom,
       coordinates: geom.coordinates.map(ring =>

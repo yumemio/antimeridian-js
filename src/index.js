@@ -925,7 +925,7 @@ export function centroid(shape) {
     geom = shape.geometry;
   }
   if (geom.type === "Polygon") {
-    return turf.centroid({ type: "Feature", geometry: geom });
+    return turf.centerOfMass({ type: "Feature", geometry: geom });
   } else if (geom.type === "MultiPolygon") {
     const newPolys = [];
     geom.coordinates.forEach(polygonCoords => {
@@ -945,7 +945,7 @@ export function centroid(shape) {
     });
     // Build a new MultiPolygon with the translated components.
     const mp = turf.multiPolygon(newPolys);
-    let cent = turf.centroid(mp);
+    let cent = turf.centerOfMass(mp);
     // If the computed centroid's longitude is greater than 180, adjust it.
     if (cent.geometry.coordinates[0] > 180) {
       cent.geometry.coordinates[0] -= 360;
