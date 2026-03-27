@@ -19,7 +19,7 @@
 - ~~Align public function comments/signatures with the current implementation.~~
 - ~~Rename `fix_multipolygon` to upstream-compatible `fix_multi_polygon`.~~
 - Privatize helpers that are not part of the upstream public API.
-- Remove placeholder exports such as `helloWorld`.
+- ~~Remove placeholder exports such as `helloWorld`.~~
 
 ## 2. Decouple Internal Code From Turf Feature Inputs
 

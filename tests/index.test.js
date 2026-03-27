@@ -1,7 +1,6 @@
 import * as turf from '@turf/turf';
 
 import {
-  helloWorld,
   spherical_degrees_to_cartesian,
   crossing_latitude,
   crossing_latitude_great_circle,
@@ -26,10 +25,6 @@ import {
   bbox,
   centroid
 } from "../src/index.js";
-
-test("helloWorld function should return the expected greeting", () => {
-  expect(helloWorld()).toBe("Hello from my-npm-package!");
-});
 
 describe('spherical_degrees_to_cartesian', () => {
   test('converts [0, 0] correctly', () => {

@@ -8,13 +8,6 @@
 import * as turf from '@turf/turf';
 
 /**
- * Test function - to be removed
- */
-export function helloWorld() {
-  return "Hello from my-npm-package!";
-}
-
-/**
  * Base class for all package-specific warnings.
  */
 export class AntimeridianWarning extends Error {
