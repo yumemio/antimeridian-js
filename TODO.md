@@ -18,7 +18,6 @@
 
 - ~~Align public function comments/signatures with the current implementation.~~
 - ~~Rename `fix_multipolygon` to upstream-compatible `fix_multi_polygon`.~~
-- Privatize helpers that are not part of the upstream public API.
 - ~~Remove placeholder exports such as `helloWorld`.~~
 
 ## 2. Decouple Internal Code From Turf Feature Inputs
@@ -43,3 +42,8 @@
 - Port the `v0.4.1` `reverse` option.
 - Audit and port the `v0.4.2` multiple-interiors fix.
 - Review `v0.4.3` through `0.4.6` for any additional behavior changes before declaring parity complete.
+
+## Will consider later
+
+- Privatize helpers that are not part of the upstream public API.
+  Possible future approach: move helper functions into a small internal module and have helper-level tests import that module directly, so `src/index.js` can stay narrow without dropping low-level test coverage.
