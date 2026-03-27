@@ -144,7 +144,7 @@ export function fix_shape(
     const fixed = fix_polygon(feature, { force_north_pole, force_south_pole, fix_winding, great_circle });
     return returnGeometry ? fixed.geometry : fixed;
   } else if (type === "MultiPolygon") {
-    const fixed = fix_multipolygon(feature, { force_north_pole, force_south_pole, fix_winding, great_circle });
+    const fixed = fix_multi_polygon(feature, { force_north_pole, force_south_pole, fix_winding, great_circle });
     return returnGeometry ? fixed.geometry : fixed;
   } else if (type === "LineString") {
     const fixed = fix_line_string(feature, great_circle);
@@ -204,7 +204,7 @@ export function segment_shape(shape, great_circle) {
  * @param {boolean} [options.great_circle=true]
  * @returns {Object} A MultiPolygon geometry or Feature matching the input container kind.
  */
-export function fix_multipolygon(
+export function fix_multi_polygon(
   multiPolygon,
   { force_north_pole = false, force_south_pole = false, fix_winding = true, great_circle = true } = {}
 ) {
