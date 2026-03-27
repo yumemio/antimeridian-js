@@ -2,6 +2,7 @@ import * as turf from '@turf/turf';
 
 const { readInput, readOutput } = require('./conftest');
 const { fix_multipolygon, fix_shape } = require('../src/index.js'); // Adjust the path as needed
+const { normalize } = require('./helper/normalize');
 
 describe('fix_multipolygon', () => {
   // Parameterize over two test names and two subdirectories/great_circle settings.
@@ -18,7 +19,7 @@ describe('fix_multipolygon', () => {
         const expected = readOutput(name, subdirectory);
         const fixed = fix_multipolygon(input, { great_circle });
         // We assume our fixed MultiPolygon is valid and exactly matches the expected output.
-        expect(fixed).toEqual(expected);
+        expect(normalize(fixed)).toEqual(normalize(expected));
       });
     });
   });

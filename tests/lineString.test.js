@@ -1,6 +1,7 @@
 import * as turf from '@turf/turf';
 
 const { readInput, readOutput } = require('./conftest');
+require('./jestExtensions/toBeCloseGeoJSON');
 const { fix_line_string, fix_multi_line_string } = require('../src/index.js');
 
 describe('fix_line_string', () => {
@@ -10,7 +11,7 @@ describe('fix_line_string', () => {
       const input = readInput("line");
       const expected = readOutput("line");
       const fixed = fix_line_string(input, great_circle);
-      expect(fixed).toBeCloseTo(expected);
+      expect(fixed).toBeCloseGeoJSON(expected);
     }
   );
 });
@@ -26,4 +27,3 @@ describe('fix_multi_line_string', () => {
     }
   );
 });
-
